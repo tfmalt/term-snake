@@ -1,26 +1,29 @@
 # CLAUDE.md — Snake Game (Rust)
 
-This file provides context and guidance for Claude Code when working on this project.
+This file provides context and guidance for Claude Code when working on this
+project.
 
 ## Project Overview
 
-A cross-platform, terminal-based Snake game written in Rust. The game targets modern terminal emulators on Linux, macOS, and Windows (including WSL). Input is supported via keyboard and optionally via game controller. Graphics use Unicode block elements and Nerd Font glyphs — no ASCII fallback, no color emoji dependency.
+A cross-platform, terminal-based Snake game written in Rust. The game targets
+modern terminal emulators on Linux, macOS, and Windows (including WSL). Input
+is supported via keyboard and optionally via game controller. Graphics use
+Unicode block elements and Nerd Font glyphs — no ASCII fallback, no color
+emoji dependency.
 
 ## Technology Stack
 
-| Crate | Purpose |
-|---|---|
-| `ratatui` | Terminal UI rendering framework |
-| `crossterm` | Cross-platform terminal raw mode, keyboard input, cursor control |
-| `gilrs` | Game controller / gamepad input (disabled automatically under WSL) |
-| `unicode-width` | Correct cell-width calculation for Unicode glyphs |
-| `serde` + `serde_json` | High score persistence |
-| `clap` | CLI argument parsing (e.g. `--speed`, `--no-controller`) |
-| `rand` | Food placement randomization |
+- `ratatui`: terminal UI rendering framework.
+- `crossterm`: cross-platform raw mode, keyboard input, cursor control.
+- `gilrs`: game controller input (disabled automatically under WSL).
+- `unicode-width`: correct cell-width calculation for Unicode glyphs.
+- `serde` + `serde_json`: high score persistence.
+- `clap`: CLI argument parsing (for flags like `--speed`).
+- `rand`: food placement randomization.
 
 ## Project Structure
 
-```
+```text
 snake/
 ├── CLAUDE.md
 ├── PLAN.md
@@ -53,17 +56,20 @@ snake/
 
 ### Game Loop
 
-The main loop runs at a fixed tick rate driven by `std::thread::sleep`. The tick rate increases as the score grows (speed levels). Each tick:
+The main loop runs at a fixed tick rate driven by `std::thread::sleep`. The
+tick rate increases as the score grows (speed levels). Each tick:
 
 1. Poll input (keyboard via crossterm, controller via gilrs if available)
 2. Update game state (move snake, check collisions, spawn food)
 3. Render frame (ratatui)
 
-Input is decoupled from the tick rate — direction changes are buffered and only one is consumed per tick to prevent 180° reversals from rapid input.
+Input is decoupled from the tick rate — direction changes are buffered and
+only one is consumed per tick to prevent 180° reversals from rapid input.
 
 ### Input Abstraction
 
-All input sources (keyboard, D-pad, analog stick) funnel into a single `GameInput` enum:
+All input sources (keyboard, D-pad, analog stick) funnel into a single
+`GameInput` enum:
 
 ```rust
 pub enum GameInput {
@@ -74,15 +80,21 @@ pub enum GameInput {
 }
 ```
 
-The `input.rs` module is the only place that knows about `crossterm` or `gilrs`.
+The `input.rs` module is the only place that knows about `crossterm` or
+`gilrs`.
 
 ### Grid Coordinate System
 
-The game grid uses a logical coordinate system independent of terminal cell size. Each logical cell maps to **2 terminal columns × 1 row** to account for the typical 1:2 aspect ratio of terminal characters, ensuring the grid appears square. All glyphs used for the grid must be single-width Unicode (not double-width emoji).
+The game grid uses a logical coordinate system independent of terminal cell
+size. Each logical cell maps to **2 terminal columns × 1 row** to account for
+the typical 1:2 aspect ratio of terminal characters, ensuring the grid appears
+square. All glyphs used for the grid must be single-width Unicode (not
+double-width emoji).
 
 ### Glyph Palette
 
-Defined in `config.rs` as constants. Do not scatter glyph literals across the codebase.
+Defined in `config.rs` as constants. Do not scatter glyph literals across the
+codebase.
 
 ```rust
 pub const GLYPH_SNAKE_HEAD_UP: &str    = "▲";
@@ -99,7 +111,10 @@ pub const GLYPH_EMPTY: &str            = " ";
 
 ### Platform Detection (WSL)
 
-`platform.rs` detects WSL at startup by checking `/proc/version` for "microsoft" (case-insensitive). If WSL is detected, controller support is disabled and a note is shown in the HUD. No panics, no user-facing errors — it degrades silently.
+`platform.rs` detects WSL at startup by checking `/proc/version` for
+"microsoft" (case-insensitive). If WSL is detected, controller support is
+disabled and a note is shown in the HUD. No panics, no user-facing errors — it
+degrades silently.
 
 ### High Score Persistence
 
@@ -113,11 +128,13 @@ Use the `dirs` crate to resolve these paths at runtime.
 ## Coding Conventions
 
 - Use `thiserror` for error types; no `unwrap()` in library code paths.
-- Prefer `Result<T, E>` returns throughout; only `unwrap()` in `main()` at startup after clear diagnostic messages.
+- Prefer `Result<T, E>` returns throughout; only `unwrap()` in `main()` at
+  startup after clear diagnostic messages.
 - All public types and functions must have doc comments.
 - Run `cargo clippy -- -D warnings` before committing — CI enforces this.
 - Format with `cargo fmt` (rustfmt defaults).
-- Keep `renderer.rs` free of game logic — it only reads state, never mutates it.
+- Keep `renderer.rs` free of game logic — it only reads state, never mutates
+  it.
 
 ## Building
 
@@ -152,7 +169,9 @@ cargo install snake
 
 ## Testing Strategy
 
-- Unit tests in each module for game logic (collision, direction reversal prevention, food spawn, score calculation).
-- Integration test that runs a deterministic sequence of inputs against the game state and asserts expected output.
+- Unit tests in each module for game logic (collision, direction reversal
+  prevention, food spawn, score calculation).
+- Integration test that runs a deterministic sequence of inputs against the
+  game state and asserts expected output.
 - No tests for rendering — visual output is verified manually.
 - CI runs on `ubuntu-latest`, `macos-latest`, `windows-latest`.

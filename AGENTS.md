@@ -1,15 +1,16 @@
 # AGENTS.md - Instructions for Agentic Coding Tools
 
-This file is the operating manual for coding agents working in this repository.
-It is based on the current project docs (`CLAUDE.md`, `PLAN.md`) and Rust best
-practices for this codebase.
+This file is the operating manual for coding agents working in this
+repository. It is based on the current project docs (`CLAUDE.md`, `PLAN.md`)
+and Rust best practices for this codebase.
 
 ## Scope and Source of Truth
 
 1. Follow this file for day-to-day implementation behavior.
 2. Treat `CLAUDE.md` as the architecture and product spec.
 3. Treat `PLAN.md` as the phased execution plan.
-4. If these files conflict, prefer `CLAUDE.md` for architecture and runtime rules.
+4. If these files conflict, prefer `CLAUDE.md` for architecture and runtime
+   rules.
 5. Keep changes aligned with the intended module layout in `src/`.
 
 ## Repository State (Important)
@@ -29,10 +30,12 @@ is new to Rust and this stack.
 - Prefer small, incremental steps over large opaque rewrites.
 - Explain Rust-specific choices in plain language (ownership, borrowing,
   lifetimes, enums, pattern matching, error propagation).
-- When introducing an idiom, briefly state why it is idiomatic in Rust and what
-  alternative was considered.
-- Tie explanations to concrete code locations and behavior, not abstract theory.
-- Surface tradeoffs (readability, performance, safety, ergonomics) in 1-2 lines.
+- When introducing an idiom, briefly state why it is idiomatic in Rust and
+  what alternative was considered.
+- Tie explanations to concrete code locations and behavior, not abstract
+  theory.
+- Surface tradeoffs (readability, performance, safety, ergonomics) in 1-2
+  lines.
 - Encourage learning-oriented follow-ups (focused tests, tiny refactors,
   "try this next" tasks).
 - For non-trivial edits, include a short "what changed" and "why this Rust
@@ -45,7 +48,8 @@ Teaching style expectations:
 1. Be precise but approachable; define jargon once before using it repeatedly.
 2. Favor examples over long prose when clarifying a concept.
 3. Keep momentum: teach through the current task instead of unrelated detours.
-4. If a change is complex, propose a staged plan the learner can review stepwise.
+4. If a change is complex, propose a staged plan the learner can review
+   stepwise.
 
 ## Cursor/Copilot Rule Files
 
@@ -119,22 +123,26 @@ Use this before finalizing substantial changes:
 - Functions/modules/variables: `snake_case`.
 - Constants/statics: `SCREAMING_SNAKE_CASE`.
 - Test names should describe behavior, not implementation detail.
-- Prefer domain-specific names (`tick_interval_ms`) over generic names (`value`).
+- Prefer domain-specific names (`tick_interval_ms`) over generic names
+  (`value`).
 
 ### Types and Ownership
 
 - Prefer explicit domain types/structs over loose tuples in public APIs.
-- Use `u16`/`u32`/`i32` intentionally for coordinates and scores as documented.
+- Use `u16`/`u32`/`i32` intentionally for coordinates and scores as
+  documented.
 - Borrow where possible (`&T`, `&mut T`) and clone only when needed.
 - Keep state mutations centralized in game-state methods.
-- Derive traits intentionally (`Debug`, `Clone`, `Copy`, `Eq`, `PartialEq`) where useful.
+- Derive traits intentionally (`Debug`, `Clone`, `Copy`, `Eq`, `PartialEq`)
+  where useful.
 
 ### Error Handling
 
 - Use `Result<T, E>` for fallible operations.
 - Use `thiserror` for custom error enums.
 - No `unwrap()` in library/game modules.
-- `expect()` is acceptable only when failure is unrecoverable and message is clear.
+- `expect()` is acceptable only when failure is unrecoverable and message is
+  clear.
 - If panics are possible at startup, surface actionable diagnostics.
 - Gracefully degrade optional features (example: disable controller on WSL).
 
@@ -150,7 +158,8 @@ Use this before finalizing substantial changes:
 - Prefer unit tests for pure game logic and deterministic behavior.
 - Add regression tests for bug fixes.
 - Avoid testing rendering output snapshots unless explicitly requested.
-- Keep tests deterministic; seed RNG or inject deterministic providers when needed.
+- Keep tests deterministic; seed RNG or inject deterministic providers when
+  needed.
 - Validate direction buffering and collision behavior with focused tests.
 
 ### Architecture Constraints (From Spec)
