@@ -11,6 +11,7 @@ use crate::platform::Platform;
 #[derive(Debug, Clone, Copy)]
 pub struct HudInfo {
     pub high_score: u32,
+    pub game_over_reference_high_score: u32,
     pub controller_enabled: bool,
 }
 
@@ -18,6 +19,7 @@ impl Default for HudInfo {
     fn default() -> Self {
         Self {
             high_score: 0,
+            game_over_reference_high_score: 0,
             controller_enabled: true,
         }
     }

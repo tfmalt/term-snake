@@ -48,6 +48,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut state = GameState::new((DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT));
     state.status = GameStatus::Paused;
     let mut high_score = load_high_score();
+    let mut game_over_reference_high_score = high_score;
 
     let controller_enabled = !cli.no_controller && !platform.is_wsl();
     let mut last_tick = Instant::now();
@@ -61,6 +62,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 platform,
                 HudInfo {
                     high_score,
+                    game_over_reference_high_score,
                     controller_enabled,
                 },
             )
@@ -81,12 +83,14 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         }
 
         if state.status != last_status {
-            if matches!(state.status, GameStatus::GameOver | GameStatus::Victory)
-                && state.score > high_score
-            {
-                high_score = state.score;
-                if let Err(error) = save_high_score(high_score) {
-                    eprintln!("Failed to save high score: {error}");
+            if matches!(state.status, GameStatus::GameOver | GameStatus::Victory) {
+                game_over_reference_high_score = high_score;
+
+                if state.score > high_score {
+                    high_score = state.score;
+                    if let Err(error) = save_high_score(high_score) {
+                        eprintln!("Failed to save high score: {error}");
+                    }
                 }
             }
 

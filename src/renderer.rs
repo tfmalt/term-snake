@@ -49,9 +49,12 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
 
     match state.status {
         GameStatus::Paused => render_pause_menu(frame, play_area),
-        GameStatus::GameOver => {
-            render_game_over_menu(frame, play_area, state.score, hud_info.high_score)
-        }
+        GameStatus::GameOver => render_game_over_menu(
+            frame,
+            play_area,
+            state.score,
+            hud_info.game_over_reference_high_score,
+        ),
         _ => {}
     }
 }
