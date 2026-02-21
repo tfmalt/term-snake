@@ -1,10 +1,11 @@
 use std::io;
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use gilrs::{Axis, Button, Event as GilrsEvent, EventType, Gilrs};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use gilrs::{Axis, Button, EventType, Gilrs};
 
 const STICK_DEADZONE: f32 = 0.5;
+const STICK_RELEASE_DEADZONE: f32 = 0.25;
 
 /// Canonical movement directions for snake input.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -56,6 +57,7 @@ impl Default for InputConfig {
 /// Non-blocking input poller for keyboard and controller sources.
 pub struct InputHandler {
     gilrs: Option<Gilrs>,
+    last_stick_direction: Option<Direction>,
 }
 
 impl InputHandler {
@@ -64,20 +66,58 @@ impl InputHandler {
     pub fn new(config: InputConfig) -> Self {
         Self {
             gilrs: initialize_gilrs(config),
+            last_stick_direction: None,
         }
     }
 
     /// Polls for one input event without blocking the game loop.
     pub fn poll_input(&mut self) -> io::Result<Option<GameInput>> {
-        if event::poll(Duration::from_millis(0))? {
+        let mut latest_terminal_input: Option<GameInput> = None;
+        while event::poll(Duration::from_millis(0))? {
             let terminal_event = event::read()?;
-            return Ok(map_terminal_event(terminal_event));
+            let Some(mapped) = map_terminal_event(terminal_event) else {
+                continue;
+            };
+
+            if matches!(mapped, GameInput::Quit) {
+                return Ok(Some(mapped));
+            }
+
+            latest_terminal_input = Some(mapped);
+        }
+
+        if latest_terminal_input.is_some() {
+            return Ok(latest_terminal_input);
         }
 
         if let Some(gilrs) = &mut self.gilrs {
             while let Some(controller_event) = gilrs.next_event() {
-                if let Some(mapped_input) = map_controller_event(controller_event) {
-                    return Ok(Some(mapped_input));
+                match controller_event.event {
+                    EventType::ButtonPressed(button, _) => {
+                        if let Some(mapped_input) = map_controller_button(button) {
+                            return Ok(Some(mapped_input));
+                        }
+                    }
+                    EventType::AxisChanged(axis, value, _) => {
+                        if value.abs() < STICK_RELEASE_DEADZONE {
+                            self.last_stick_direction = None;
+                            continue;
+                        }
+
+                        let Some(GameInput::Direction(direction)) =
+                            map_controller_axis(axis, value)
+                        else {
+                            continue;
+                        };
+
+                        if self.last_stick_direction == Some(direction) {
+                            continue;
+                        }
+
+                        self.last_stick_direction = Some(direction);
+                        return Ok(Some(GameInput::Direction(direction)));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -101,6 +141,10 @@ fn map_terminal_event(event: Event) -> Option<GameInput> {
 }
 
 fn map_key_event(key_event: KeyEvent) -> Option<GameInput> {
+    if !matches!(key_event.kind, KeyEventKind::Press) {
+        return None;
+    }
+
     let key_code = key_event.code;
 
     if matches!(key_code, KeyCode::Char('c')) && key_event.modifiers.contains(KeyModifiers::CONTROL)
@@ -148,14 +192,6 @@ fn initialize_gilrs(config: InputConfig) -> Option<Gilrs> {
     Some(gilrs)
 }
 
-fn map_controller_event(event: GilrsEvent) -> Option<GameInput> {
-    match event.event {
-        EventType::ButtonPressed(button, _) => map_controller_button(button),
-        EventType::AxisChanged(axis, value, _) => map_controller_axis(axis, value),
-        _ => None,
-    }
-}
-
 fn map_controller_button(button: Button) -> Option<GameInput> {
     match button {
         Button::DPadUp => Some(GameInput::Direction(Direction::Up)),
@@ -195,7 +231,7 @@ fn map_controller_axis(axis: Axis, value: f32) -> Option<GameInput> {
 
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use gilrs::{Axis, Button};
 
     use super::{
@@ -251,6 +287,18 @@ mod tests {
         assert_eq!(map_key_event(pause), Some(GameInput::Pause));
         assert_eq!(map_key_event(confirm), Some(GameInput::Confirm));
         assert_eq!(map_key_event(ctrl_c), Some(GameInput::Quit));
+    }
+
+    #[test]
+    fn keyboard_mapping_ignores_non_press_key_events() {
+        let release = KeyEvent {
+            code: KeyCode::Left,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        };
+
+        assert_eq!(map_key_event(release), None);
     }
 
     #[test]
