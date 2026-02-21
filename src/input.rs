@@ -1,3 +1,11 @@
+use std::io;
+use std::time::Duration;
+
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use gilrs::{Axis, Button, Event as GilrsEvent, EventType, Gilrs};
+
+const STICK_DEADZONE: f32 = 0.5;
+
 /// Canonical movement directions for snake input.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Direction {
@@ -29,15 +37,34 @@ pub enum GameInput {
     Confirm,
 }
 
+/// Configuration flags for input source initialization.
+#[derive(Debug, Clone, Copy)]
+pub struct InputConfig {
+    pub enable_controller: bool,
+    pub is_wsl: bool,
+}
+
+impl Default for InputConfig {
+    fn default() -> Self {
+        Self {
+            enable_controller: true,
+            is_wsl: false,
+        }
+    }
+}
+
 /// Non-blocking input poller for keyboard and controller sources.
-#[derive(Debug, Default)]
-pub struct InputHandler;
+pub struct InputHandler {
+    gilrs: Option<Gilrs>,
+}
 
 impl InputHandler {
     /// Builds a new input handler.
     #[must_use]
-    pub fn new() -> Self {
-        Self
+    pub fn new(config: InputConfig) -> Self {
+        Self {
+            gilrs: initialize_gilrs(config),
+        }
     }
 
     /// Polls for one input event without blocking the game loop.
@@ -45,6 +72,14 @@ impl InputHandler {
         if event::poll(Duration::from_millis(0))? {
             let terminal_event = event::read()?;
             return Ok(map_terminal_event(terminal_event));
+        }
+
+        if let Some(gilrs) = &mut self.gilrs {
+            while let Some(controller_event) = gilrs.next_event() {
+                if let Some(mapped_input) = map_controller_event(controller_event) {
+                    return Ok(Some(mapped_input));
+                }
+            }
         }
 
         Ok(None)
@@ -93,11 +128,80 @@ fn map_key_event(key_event: KeyEvent) -> Option<GameInput> {
     }
 }
 
+fn initialize_gilrs(config: InputConfig) -> Option<Gilrs> {
+    if !config.enable_controller || config.is_wsl {
+        return None;
+    }
+
+    let gilrs = match Gilrs::new() {
+        Ok(gilrs) => gilrs,
+        Err(error) => {
+            eprintln!("Controller input disabled: {error}");
+            return None;
+        }
+    };
+
+    for (_, gamepad) in gilrs.gamepads() {
+        eprintln!("Detected gamepad: {}", gamepad.name());
+    }
+
+    Some(gilrs)
+}
+
+fn map_controller_event(event: GilrsEvent) -> Option<GameInput> {
+    match event.event {
+        EventType::ButtonPressed(button, _) => map_controller_button(button),
+        EventType::AxisChanged(axis, value, _) => map_controller_axis(axis, value),
+        _ => None,
+    }
+}
+
+fn map_controller_button(button: Button) -> Option<GameInput> {
+    match button {
+        Button::DPadUp => Some(GameInput::Direction(Direction::Up)),
+        Button::DPadDown => Some(GameInput::Direction(Direction::Down)),
+        Button::DPadLeft => Some(GameInput::Direction(Direction::Left)),
+        Button::DPadRight => Some(GameInput::Direction(Direction::Right)),
+        Button::Start => Some(GameInput::Pause),
+        Button::Select | Button::Mode => Some(GameInput::Quit),
+        Button::South => Some(GameInput::Confirm),
+        _ => None,
+    }
+}
+
+fn map_controller_axis(axis: Axis, value: f32) -> Option<GameInput> {
+    if value.abs() < STICK_DEADZONE {
+        return None;
+    }
+
+    match axis {
+        Axis::LeftStickX => {
+            if value < 0.0 {
+                Some(GameInput::Direction(Direction::Left))
+            } else {
+                Some(GameInput::Direction(Direction::Right))
+            }
+        }
+        Axis::LeftStickY => {
+            if value < 0.0 {
+                Some(GameInput::Direction(Direction::Up))
+            } else {
+                Some(GameInput::Direction(Direction::Down))
+            }
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use gilrs::{Axis, Button};
 
-    use super::{direction_change_is_valid, map_key_event, Direction, GameInput};
+    use super::{
+        direction_change_is_valid, map_controller_axis, map_controller_button, map_key_event,
+        Direction, GameInput,
+    };
 
     #[test]
     fn opposite_direction_is_correct() {
@@ -148,8 +252,35 @@ mod tests {
         assert_eq!(map_key_event(confirm), Some(GameInput::Confirm));
         assert_eq!(map_key_event(ctrl_c), Some(GameInput::Quit));
     }
-}
-use std::io;
-use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+    #[test]
+    fn controller_button_mapping_supports_dpad_and_actions() {
+        assert_eq!(
+            map_controller_button(Button::DPadUp),
+            Some(GameInput::Direction(Direction::Up))
+        );
+        assert_eq!(
+            map_controller_button(Button::DPadRight),
+            Some(GameInput::Direction(Direction::Right))
+        );
+        assert_eq!(map_controller_button(Button::Start), Some(GameInput::Pause));
+        assert_eq!(map_controller_button(Button::Select), Some(GameInput::Quit));
+        assert_eq!(
+            map_controller_button(Button::South),
+            Some(GameInput::Confirm)
+        );
+    }
+
+    #[test]
+    fn controller_axis_mapping_respects_deadzone() {
+        assert_eq!(map_controller_axis(Axis::LeftStickX, 0.2), None);
+        assert_eq!(
+            map_controller_axis(Axis::LeftStickX, -0.8),
+            Some(GameInput::Direction(Direction::Left))
+        );
+        assert_eq!(
+            map_controller_axis(Axis::LeftStickY, 0.9),
+            Some(GameInput::Direction(Direction::Down))
+        );
+    }
+}
