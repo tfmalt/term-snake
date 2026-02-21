@@ -1,9 +1,10 @@
 use std::io;
 use std::panic;
+use std::thread;
 use std::time::Duration;
 
+use clap::Parser;
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -11,26 +12,44 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::widgets::{Block, Borders};
 use ratatui::{Frame, Terminal};
+use snake::input::{GameInput, InputConfig, InputHandler};
+use snake::platform::Platform;
+
+#[derive(Debug, Parser)]
+struct Cli {
+    /// Disable controller input even when available.
+    #[arg(long = "no-controller")]
+    no_controller: bool,
+}
 
 fn main() -> io::Result<()> {
+    let cli = Cli::parse();
+    let platform = Platform::detect();
+
     install_panic_hook();
 
-    run()?;
+    run(cli, platform)?;
     cleanup_terminal()?;
     Ok(())
 }
 
-fn run() -> io::Result<()> {
+fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut terminal = setup_terminal()?;
+    let mut input = InputHandler::new(InputConfig {
+        enable_controller: !cli.no_controller,
+        is_wsl: platform.is_wsl(),
+    });
 
     loop {
         terminal.draw(render_placeholder)?;
 
-        if event::poll(Duration::from_millis(50))? {
-            if should_quit(event::read()?) {
+        if let Some(game_input) = input.poll_input()? {
+            if matches!(game_input, GameInput::Quit) {
                 break;
             }
         }
+
+        thread::sleep(Duration::from_millis(16));
     }
 
     Ok(())
@@ -69,18 +88,6 @@ fn restore_terminal_after_panic() {
 
     let mut stdout = io::stdout();
     let _ = execute!(stdout, Show, LeaveAlternateScreen);
-}
-
-fn should_quit(event: Event) -> bool {
-    let Event::Key(key_event) = event else {
-        return false;
-    };
-
-    match key_event.code {
-        KeyCode::Char('q') | KeyCode::Char('Q') => true,
-        KeyCode::Char('c') => key_event.modifiers.contains(KeyModifiers::CONTROL),
-        _ => false,
-    }
 }
 
 fn render_placeholder(frame: &mut Frame<'_>) {
