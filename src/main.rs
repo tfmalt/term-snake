@@ -14,7 +14,7 @@ use ratatui::Terminal;
 use snake::config::{
     DEFAULT_GRID_HEIGHT, DEFAULT_GRID_WIDTH, DEFAULT_TICK_INTERVAL_MS, MIN_TICK_INTERVAL_MS,
 };
-use snake::game::GameState;
+use snake::game::{GameState, GameStatus};
 use snake::input::{GameInput, InputConfig, InputHandler};
 use snake::platform::Platform;
 use snake::renderer;
@@ -45,27 +45,37 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         is_wsl: platform.is_wsl(),
     });
     let mut state = GameState::new((DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT));
+    state.status = GameStatus::Paused;
+    let mut high_score = 0;
 
-    let hud_info = HudInfo {
-        high_score: 0,
-        controller_enabled: !cli.no_controller && !platform.is_wsl(),
-    };
+    let controller_enabled = !cli.no_controller && !platform.is_wsl();
     let mut last_tick = Instant::now();
 
     loop {
-        terminal.draw(|frame| renderer::render(frame, &state, platform, hud_info))?;
+        terminal.draw(|frame| {
+            renderer::render(
+                frame,
+                &state,
+                platform,
+                HudInfo {
+                    high_score,
+                    controller_enabled,
+                },
+            )
+        })?;
 
         if let Some(game_input) = input.poll_input()? {
             if matches!(game_input, GameInput::Quit) {
                 break;
             }
 
-            state.apply_input(game_input);
+            handle_input(&mut state, game_input);
         }
 
         let tick_interval = tick_interval_for_speed(state.speed_level);
         if last_tick.elapsed() >= tick_interval {
             state.tick();
+            high_score = high_score.max(state.score);
             last_tick = Instant::now();
         }
 
@@ -73,6 +83,25 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn handle_input(state: &mut GameState, input: GameInput) {
+    match input {
+        GameInput::Confirm if is_start_screen(state) => {
+            state.status = GameStatus::Playing;
+        }
+        GameInput::Confirm
+            if matches!(state.status, GameStatus::GameOver | GameStatus::Victory) =>
+        {
+            *state = GameState::new(state.bounds());
+            state.status = GameStatus::Paused;
+        }
+        other => state.apply_input(other),
+    }
+}
+
+fn is_start_screen(state: &GameState) -> bool {
+    state.status == GameStatus::Paused && state.tick_count == 0 && state.score == 0
 }
 
 fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {
