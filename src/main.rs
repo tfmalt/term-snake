@@ -1,4 +1,5 @@
 use std::io;
+use std::panic;
 
 use crossterm::cursor::{Hide, Show};
 use crossterm::execute;
@@ -10,6 +11,8 @@ use ratatui::widgets::{Block, Borders};
 use ratatui::{Frame, Terminal};
 
 fn main() -> io::Result<()> {
+    install_panic_hook();
+
     run()?;
     cleanup_terminal()?;
     Ok(())
@@ -38,6 +41,22 @@ fn cleanup_terminal() -> io::Result<()> {
     execute!(stdout, Show, LeaveAlternateScreen)?;
 
     Ok(())
+}
+
+fn install_panic_hook() {
+    let default_hook = panic::take_hook();
+
+    panic::set_hook(Box::new(move |panic_info| {
+        restore_terminal_after_panic();
+        default_hook(panic_info);
+    }));
+}
+
+fn restore_terminal_after_panic() {
+    let _ = disable_raw_mode();
+
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, Show, LeaveAlternateScreen);
 }
 
 fn render_placeholder(frame: &mut Frame<'_>) {
