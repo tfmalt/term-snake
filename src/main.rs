@@ -1,7 +1,7 @@
 use std::io;
 use std::panic;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use crossterm::cursor::{Hide, Show};
@@ -10,10 +10,15 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::backend::CrosstermBackend;
-use ratatui::widgets::{Block, Borders};
-use ratatui::{Frame, Terminal};
+use ratatui::Terminal;
+use snake::config::{
+    DEFAULT_GRID_HEIGHT, DEFAULT_GRID_WIDTH, DEFAULT_TICK_INTERVAL_MS, MIN_TICK_INTERVAL_MS,
+};
+use snake::game::GameState;
 use snake::input::{GameInput, InputConfig, InputHandler};
 use snake::platform::Platform;
+use snake::renderer;
+use snake::ui::hud::HudInfo;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -39,14 +44,29 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         enable_controller: !cli.no_controller,
         is_wsl: platform.is_wsl(),
     });
+    let mut state = GameState::new((DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT));
+
+    let hud_info = HudInfo {
+        high_score: 0,
+        controller_enabled: !cli.no_controller && !platform.is_wsl(),
+    };
+    let mut last_tick = Instant::now();
 
     loop {
-        terminal.draw(render_placeholder)?;
+        terminal.draw(|frame| renderer::render(frame, &state, platform, hud_info))?;
 
         if let Some(game_input) = input.poll_input()? {
             if matches!(game_input, GameInput::Quit) {
                 break;
             }
+
+            state.apply_input(game_input);
+        }
+
+        let tick_interval = tick_interval_for_speed(state.speed_level);
+        if last_tick.elapsed() >= tick_interval {
+            state.tick();
+            last_tick = Instant::now();
         }
 
         thread::sleep(Duration::from_millis(16));
@@ -90,12 +110,10 @@ fn restore_terminal_after_panic() {
     let _ = execute!(stdout, Show, LeaveAlternateScreen);
 }
 
-fn render_placeholder(frame: &mut Frame<'_>) {
-    let area = frame.area();
-
-    let block = Block::default()
-        .title(" snake phase 2 scaffold ")
-        .borders(Borders::ALL);
-
-    frame.render_widget(block, area);
+fn tick_interval_for_speed(speed_level: u32) -> Duration {
+    let speed_penalty_ms = u64::from(speed_level.saturating_sub(1)) * 10;
+    let clamped_ms = DEFAULT_TICK_INTERVAL_MS
+        .saturating_sub(speed_penalty_ms)
+        .max(MIN_TICK_INTERVAL_MS);
+    Duration::from_millis(clamped_ms)
 }
