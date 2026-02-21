@@ -25,6 +25,7 @@ pub struct GameState {
     pub tick_count: u64,
     pub status: GameStatus,
     bounds: (u16, u16),
+    base_speed_level: u32,
     rng: StdRng,
 }
 
@@ -33,13 +34,25 @@ impl GameState {
     #[must_use]
     pub fn new(bounds: (u16, u16)) -> Self {
         let seed = rand::random::<u64>();
-        Self::new_with_seed(bounds, seed)
+        Self::new_with_seed_and_speed(bounds, seed, 1)
+    }
+
+    /// Creates a runtime state with explicit starting speed level.
+    #[must_use]
+    pub fn new_with_options(bounds: (u16, u16), starting_speed_level: u32) -> Self {
+        let seed = rand::random::<u64>();
+        Self::new_with_seed_and_speed(bounds, seed, starting_speed_level)
     }
 
     /// Creates a deterministic state for tests and reproducible simulations.
     #[must_use]
     pub fn new_with_seed(bounds: (u16, u16), seed: u64) -> Self {
+        Self::new_with_seed_and_speed(bounds, seed, 1)
+    }
+
+    fn new_with_seed_and_speed(bounds: (u16, u16), seed: u64, starting_speed_level: u32) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
+        let base_speed_level = starting_speed_level.max(1);
         let start = Position {
             x: i32::from(bounds.0 / 2),
             y: i32::from(bounds.1 / 2),
@@ -51,10 +64,11 @@ impl GameState {
             snake,
             food,
             score: 0,
-            speed_level: 1,
+            speed_level: base_speed_level,
             tick_count: 0,
             status: GameStatus::Playing,
             bounds,
+            base_speed_level,
             rng,
         }
     }
@@ -113,7 +127,7 @@ impl GameState {
     }
 
     fn update_speed_level(&mut self) {
-        self.speed_level = 1 + (self.score / POINTS_PER_SPEED_LEVEL);
+        self.speed_level = self.base_speed_level + (self.score / POINTS_PER_SPEED_LEVEL);
     }
 
     /// Returns immutable logical board bounds.
@@ -184,5 +198,11 @@ mod tests {
 
         assert_eq!(state.score, 1);
         assert_eq!(state.speed_level, 1);
+    }
+
+    #[test]
+    fn starting_speed_level_is_respected() {
+        let state = GameState::new_with_options((10, 10), 3);
+        assert_eq!(state.speed_level, 3);
     }
 }
