@@ -29,6 +29,13 @@ pub struct GameState {
 }
 
 impl GameState {
+    /// Creates a runtime state with non-deterministic RNG seeding.
+    #[must_use]
+    pub fn new(bounds: (u16, u16)) -> Self {
+        let seed = rand::random::<u64>();
+        Self::new_with_seed(bounds, seed)
+    }
+
     /// Creates a deterministic state for tests and reproducible simulations.
     #[must_use]
     pub fn new_with_seed(bounds: (u16, u16), seed: u64) -> Self {
@@ -107,6 +114,12 @@ impl GameState {
 
     fn update_speed_level(&mut self) {
         self.speed_level = 1 + (self.score / POINTS_PER_SPEED_LEVEL);
+    }
+
+    /// Returns immutable logical board bounds.
+    #[must_use]
+    pub fn bounds(&self) -> (u16, u16) {
+        self.bounds
     }
 }
 

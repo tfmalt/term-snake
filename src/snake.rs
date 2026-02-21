@@ -142,6 +142,23 @@ impl Snake {
     pub fn len(&self) -> usize {
         self.body.len()
     }
+
+    /// Returns true when there are no segments.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.body.is_empty()
+    }
+
+    /// Returns the current movement direction.
+    #[must_use]
+    pub fn direction(&self) -> Direction {
+        self.direction
+    }
+
+    /// Iterates over body segments from head to tail.
+    pub fn segments(&self) -> impl Iterator<Item = &Position> {
+        self.body.iter()
+    }
 }
 
 #[cfg(test)]
