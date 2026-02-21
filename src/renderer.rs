@@ -15,9 +15,13 @@ use crate::game::{GameState, GameStatus};
 use crate::input::Direction;
 use crate::platform::Platform;
 use crate::snake::Position;
+use crate::ui::hud::{render_hud, HudInfo};
 
 /// Renders the full game frame from immutable state.
-pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform) {
+pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_info: HudInfo) {
+    let area = frame.area();
+    let play_area = render_hud(frame, area, state, platform, hud_info);
+
     let block = Block::bordered()
         .title(status_title(state.status, platform))
         .border_set(border::Set {
@@ -31,9 +35,8 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform) {
             horizontal_bottom: GLYPH_BORDER_HORIZONTAL,
         });
 
-    let area = frame.area();
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = block.inner(play_area);
+    frame.render_widget(block, play_area);
 
     render_food(frame, inner, state);
     render_snake(frame, inner, state);
