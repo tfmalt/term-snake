@@ -1,9 +1,8 @@
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use crate::config::{BONUS_FOOD_SPAWN_INTERVAL_TICKS, POINTS_PER_SPEED_LEVEL};
-use crate::config::GridSize;
-use crate::food::{Food, FoodKind};
+use crate::config::{GridSize, POINTS_PER_SPEED_LEVEL};
+use crate::food::Food;
 use crate::input::GameInput;
 use crate::snake::{Position, Snake};
 
@@ -91,6 +90,7 @@ impl GameState {
 
         self.tick_count += 1;
         let next_head = self.snake.next_head_position();
+
         if !next_head.is_within_bounds(self.bounds) {
             self.status = GameStatus::GameOver;
             self.death_reason = Some(DeathReason::WallCollision);
@@ -121,18 +121,6 @@ impl GameState {
             }
 
             self.food = Food::spawn(&mut self.rng, self.bounds, &self.snake);
-        }
-
-        // Advance bonus food TTL; revert to normal food if it expires.
-        if self.food.tick_ttl() {
-            self.food = Food::spawn(&mut self.rng, self.bounds, &self.snake);
-        }
-
-        // Periodically upgrade normal food to bonus food.
-        if matches!(self.food.kind, FoodKind::Normal)
-            && self.tick_count % BONUS_FOOD_SPAWN_INTERVAL_TICKS == 0
-        {
-            self.food = Food::spawn_bonus(&mut self.rng, self.bounds, &self.snake);
         }
     }
 
@@ -191,13 +179,14 @@ mod tests {
     use crate::input::Direction;
 
     use super::{GameState, GameStatus};
+    use crate::input::GameInput;
     use crate::snake::{Position, Snake};
 
     #[test]
     fn snake_grows_after_eating_food() {
         let mut state = GameState::new_with_seed(GridSize { width: 10, height: 10 }, 1);
         state.snake = Snake::new(Position { x: 1, y: 1 }, Direction::Right);
-        state.food = Food::normal(Position { x: 2, y: 1 });
+        state.food = Food::new(Position { x: 2, y: 1 });
 
         state.tick();
         assert_eq!(state.snake.len(), 2);
@@ -238,7 +227,7 @@ mod tests {
     fn score_increments_when_food_is_eaten() {
         let mut state = GameState::new_with_seed(GridSize { width: 10, height: 10 }, 4);
         state.snake = Snake::new(Position { x: 5, y: 5 }, Direction::Right);
-        state.food = Food::normal(Position { x: 6, y: 5 });
+        state.food = Food::new(Position { x: 6, y: 5 });
 
         state.tick();
 
@@ -253,48 +242,66 @@ mod tests {
     }
 
     #[test]
-    fn bonus_food_spawns_at_interval() {
-        use crate::config::BONUS_FOOD_SPAWN_INTERVAL_TICKS;
-        use crate::food::FoodKind;
+    fn player_can_turn_at_last_cell_before_wall() {
+        let bounds = GridSize { width: 10, height: 10 };
+        let mut state = GameState::new_with_seed(bounds, 10);
+        // Place the snake at the second-to-last cell heading right.
+        state.snake = Snake::new(Position { x: 8, y: 5 }, Direction::Right);
+        state.food = Food::new(Position { x: 0, y: 0 });
 
-        let mut state = GameState::new_with_seed(GridSize { width: 10, height: 10 }, 42);
-        // Place the snake away from the food area and ensure normal food.
-        state.snake = Snake::new(Position { x: 0, y: 0 }, Direction::Right);
-        state.food = Food::normal(Position { x: 5, y: 5 });
-        // Advance tick_count so the next tick lands on an interval boundary.
-        state.tick_count = BONUS_FOOD_SPAWN_INTERVAL_TICKS - 1;
-
+        // Tick moves the snake to x=9 (last cell). Should NOT be game over.
         state.tick();
+        assert_eq!(state.status, GameStatus::Playing);
+        assert_eq!(state.snake.head(), Position { x: 9, y: 5 });
 
-        assert!(
-            matches!(state.food.kind, FoodKind::Bonus { .. }),
-            "food should be bonus after interval tick"
-        );
+        // Player changes direction before the next tick.
+        state.apply_input(GameInput::Direction(Direction::Down));
+
+        // Next tick moves the snake down instead of into the wall.
+        state.tick();
+        assert_eq!(state.status, GameStatus::Playing);
+        assert_eq!(state.snake.head(), Position { x: 9, y: 6 });
     }
 
     #[test]
-    fn bonus_food_reverts_to_normal_after_ttl_expires() {
-        use crate::food::{FoodKind, BONUS_FOOD_LIFETIME_TICKS};
+    fn player_can_reach_top_row_and_turn() {
+        let bounds = GridSize { width: 10, height: 10 };
+        let mut state = GameState::new_with_seed(bounds, 10);
+        state.snake = Snake::new(Position { x: 5, y: 1 }, Direction::Up);
+        state.food = Food::new(Position { x: 9, y: 9 });
 
-        // Grid must be wide enough that the snake doesn't hit the wall before
-        // the bonus TTL expires. BONUS_FOOD_LIFETIME_TICKS + margin is enough.
-        let wide_bounds = GridSize {
-            width: BONUS_FOOD_LIFETIME_TICKS + 20,
-            height: 10,
-        };
-        let mut state = GameState::new_with_seed(wide_bounds, 99);
-        // Snake moves right along y=0; food is on a different row, no collision.
-        state.snake = Snake::new(Position { x: 0, y: 0 }, Direction::Right);
-        state.food = Food::bonus(Position { x: 5, y: 5 });
+        // Tick moves the snake to y=0 (top row). Should NOT be game over.
+        state.tick();
+        assert_eq!(state.status, GameStatus::Playing);
+        assert_eq!(state.snake.head(), Position { x: 5, y: 0 });
 
-        for _ in 0..=BONUS_FOOD_LIFETIME_TICKS {
-            state.tick();
-        }
+        // Player changes direction before the next tick.
+        state.apply_input(GameInput::Direction(Direction::Right));
 
-        assert_eq!(state.status, GameStatus::Playing, "game should still be running");
-        assert!(
-            matches!(state.food.kind, FoodKind::Normal),
-            "food should revert to normal after TTL expires"
-        );
+        // Next tick moves right instead of into the wall.
+        state.tick();
+        assert_eq!(state.status, GameStatus::Playing);
+        assert_eq!(state.snake.head(), Position { x: 6, y: 0 });
+    }
+
+    #[test]
+    fn player_can_reach_bottom_row_and_turn() {
+        let bounds = GridSize { width: 10, height: 10 };
+        let mut state = GameState::new_with_seed(bounds, 10);
+        state.snake = Snake::new(Position { x: 5, y: 8 }, Direction::Down);
+        state.food = Food::new(Position { x: 9, y: 0 });
+
+        // Tick moves the snake to y=9 (bottom row). Should NOT be game over.
+        state.tick();
+        assert_eq!(state.status, GameStatus::Playing);
+        assert_eq!(state.snake.head(), Position { x: 5, y: 9 });
+
+        // Player changes direction before the next tick.
+        state.apply_input(GameInput::Direction(Direction::Right));
+
+        // Next tick moves right instead of into the wall.
+        state.tick();
+        assert_eq!(state.status, GameStatus::Playing);
+        assert_eq!(state.snake.head(), Position { x: 6, y: 9 });
     }
 }

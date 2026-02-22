@@ -7,10 +7,9 @@ use ratatui::Frame;
 use crate::config::{
     GridSize, GLYPH_BORDER_BOTTOM_LEFT, GLYPH_BORDER_BOTTOM_RIGHT, GLYPH_BORDER_HORIZONTAL,
     GLYPH_BORDER_TOP_LEFT, GLYPH_BORDER_TOP_RIGHT, GLYPH_BORDER_VERTICAL, GLYPH_FOOD,
-    GLYPH_FOOD_BONUS, GLYPH_SNAKE_BODY, GLYPH_SNAKE_HEAD_DOWN, GLYPH_SNAKE_HEAD_LEFT,
-    GLYPH_SNAKE_HEAD_RIGHT, GLYPH_SNAKE_HEAD_UP, GLYPH_SNAKE_TAIL,
+    GLYPH_SNAKE_BODY, GLYPH_SNAKE_HEAD_DOWN, GLYPH_SNAKE_HEAD_LEFT, GLYPH_SNAKE_HEAD_RIGHT,
+    GLYPH_SNAKE_HEAD_UP, GLYPH_SNAKE_TAIL,
 };
-use crate::food::FoodKind;
 use crate::game::{GameState, GameStatus};
 use crate::input::Direction;
 use crate::platform::Platform;
@@ -82,16 +81,10 @@ fn render_food(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrome
         return;
     };
 
-    let (glyph, style) = match state.food.kind {
-        FoodKind::Normal => (GLYPH_FOOD, style_with_color(monochrome, Color::Red, false)),
-        FoodKind::Bonus { .. } => (
-            GLYPH_FOOD_BONUS,
-            style_with_color(monochrome, Color::Yellow, true),
-        ),
-    };
+    let style = style_with_color(monochrome, Color::Red, false);
 
     let buffer = frame.buffer_mut();
-    buffer.set_string(x, y, glyph, style);
+    buffer.set_string(x, y, GLYPH_FOOD, style);
 }
 
 fn render_snake(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrome: bool) {
