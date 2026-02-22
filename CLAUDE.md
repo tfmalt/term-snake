@@ -125,6 +125,23 @@ Scores are saved to a platform-appropriate path:
 
 Use the `dirs` crate to resolve these paths at runtime.
 
+## Versioning Policy
+
+Follow [Semantic Versioning](https://semver.org/) with the scheme `MAJOR.MINOR.PATCH`.
+The project is pre-1.0, so MAJOR stays at `0`.
+
+- **Patch** (`0.y.Z`): bump for every bug fix, refactor, test addition, internal
+  cleanup, or dependency update. Update `version` in `Cargo.toml` and include the
+  bump in the same commit as the change.
+- **Minor** (`0.Y.0`): bump whenever a change is visible to the player — new or
+  removed game mechanics, scoring changes, UI layout changes, new screens, new
+  glyphs, or altered controls. Reset patch to `0`.
+- **Major** (`X.0.0`): reserved for a stable 1.0 release.
+
+When in doubt, prefer a minor bump. Always update `Cargo.toml` in the same
+commit as the change that triggered it — never as a separate "version bump"
+commit.
+
 ## Coding Conventions
 
 - Use `thiserror` for error types; no `unwrap()` in library code paths.
