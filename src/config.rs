@@ -1,3 +1,6 @@
+use ratatui::style::Color;
+use ratatui::symbols::border;
+
 /// Logical grid dimensions passed through the game as a named type.
 ///
 /// Replaces the anonymous `(u16, u16)` tuple that was used for bounds,
@@ -15,6 +18,98 @@ impl GridSize {
         usize::from(self.width) * usize::from(self.height)
     }
 }
+
+/// A color theme applied to all visual elements.
+#[derive(Debug)]
+pub struct Theme {
+    pub name: &'static str,
+    pub snake_head: Color,
+    pub snake_body: Color,
+    pub snake_tail: Color,
+    pub food: Color,
+    pub border_fg: Color,
+    pub border_bg: Color,
+    pub hud_score: Color,
+    pub menu_title: Color,
+    pub menu_footer: Color,
+}
+
+/// Classic green-on-dark theme.
+pub const THEME_CLASSIC: Theme = Theme {
+    name: "Classic",
+    snake_head: Color::Green,
+    snake_body: Color::Green,
+    snake_tail: Color::DarkGray,
+    food: Color::Red,
+    border_fg: Color::White,
+    border_bg: Color::DarkGray,
+    hud_score: Color::White,
+    menu_title: Color::Green,
+    menu_footer: Color::DarkGray,
+};
+
+/// Ocean blue/cyan theme.
+pub const THEME_OCEAN: Theme = Theme {
+    name: "Ocean",
+    snake_head: Color::Cyan,
+    snake_body: Color::Cyan,
+    snake_tail: Color::Blue,
+    food: Color::Yellow,
+    border_fg: Color::Cyan,
+    border_bg: Color::DarkGray,
+    hud_score: Color::Cyan,
+    menu_title: Color::Cyan,
+    menu_footer: Color::DarkGray,
+};
+
+/// Neon magenta/yellow theme.
+pub const THEME_NEON: Theme = Theme {
+    name: "Neon",
+    snake_head: Color::Magenta,
+    snake_body: Color::Magenta,
+    snake_tail: Color::DarkGray,
+    food: Color::Yellow,
+    border_fg: Color::Magenta,
+    border_bg: Color::Black,
+    hud_score: Color::Magenta,
+    menu_title: Color::Magenta,
+    menu_footer: Color::DarkGray,
+};
+
+/// Monochrome theme (terminal default colors, no styling).
+pub const THEME_MONO: Theme = Theme {
+    name: "Mono",
+    snake_head: Color::Reset,
+    snake_body: Color::Reset,
+    snake_tail: Color::Reset,
+    food: Color::Reset,
+    border_fg: Color::Reset,
+    border_bg: Color::Reset,
+    hud_score: Color::Reset,
+    menu_title: Color::Reset,
+    menu_footer: Color::Reset,
+};
+
+/// All available themes in cycle order.
+pub const THEMES: &[Theme] = &[THEME_CLASSIC, THEME_OCEAN, THEME_NEON, THEME_MONO];
+
+/// Half-block border set: solid side faces the play area.
+///
+/// - Top row: `▄` (solid bottom → play area below)
+/// - Bottom row: `▀` (solid top → play area above)
+/// - Left column: `▐` (solid right → play area right)
+/// - Right column: `▌` (solid left → play area left)
+/// - All corners: `█` (fully solid)
+pub const BORDER_HALF_BLOCK: border::Set = border::Set {
+    top_left: "█",
+    top_right: "█",
+    bottom_left: "█",
+    bottom_right: "█",
+    vertical_left: "▐",
+    vertical_right: "▌",
+    horizontal_top: "▄",
+    horizontal_bottom: "▀",
+};
 
 /// Base tick interval in milliseconds.
 pub const DEFAULT_TICK_INTERVAL_MS: u64 = 200;

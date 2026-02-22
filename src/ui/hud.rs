@@ -4,6 +4,7 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
+use crate::config::Theme;
 use crate::game::GameState;
 use crate::platform::Platform;
 
@@ -13,7 +14,7 @@ pub struct HudInfo {
     pub high_score: u32,
     pub game_over_reference_high_score: u32,
     pub controller_enabled: bool,
-    pub monochrome: bool,
+    pub theme: &'static Theme,
     /// Whether the debug row is enabled (`--debug` flag).
     pub debug: bool,
     /// Pre-formatted debug string; empty when `debug` is false.
@@ -22,11 +23,12 @@ pub struct HudInfo {
 
 impl Default for HudInfo {
     fn default() -> Self {
+        use crate::config::THEME_CLASSIC;
         Self {
             high_score: 0,
             game_over_reference_high_score: 0,
             controller_enabled: true,
-            monochrome: false,
+            theme: &THEME_CLASSIC,
             debug: false,
             debug_line: String::new(),
         }
@@ -60,7 +62,7 @@ pub fn render_hud(
     frame.render_widget(
         Paragraph::new(Line::from(left_text))
             .alignment(Alignment::Left)
-            .style(left_style(info.monochrome)),
+            .style(left_style(info.theme)),
         left,
     );
 
@@ -97,12 +99,8 @@ pub fn render_hud(
     play_area
 }
 
-fn left_style(monochrome: bool) -> Style {
-    if monochrome {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD)
-    }
+fn left_style(theme: &Theme) -> Style {
+    Style::default()
+        .fg(theme.hud_score)
+        .add_modifier(Modifier::BOLD)
 }

@@ -1,14 +1,11 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::symbols::border;
+use ratatui::style::{Modifier, Style};
 use ratatui::widgets::Block;
 use ratatui::Frame;
 
 use crate::config::{
-    GridSize, GLYPH_BORDER_BOTTOM_LEFT, GLYPH_BORDER_BOTTOM_RIGHT, GLYPH_BORDER_HORIZONTAL,
-    GLYPH_BORDER_TOP_LEFT, GLYPH_BORDER_TOP_RIGHT, GLYPH_BORDER_VERTICAL, GLYPH_FOOD,
-    GLYPH_SNAKE_BODY, GLYPH_SNAKE_HEAD_DOWN, GLYPH_SNAKE_HEAD_LEFT, GLYPH_SNAKE_HEAD_RIGHT,
-    GLYPH_SNAKE_HEAD_UP, GLYPH_SNAKE_TAIL,
+    GridSize, BORDER_HALF_BLOCK, GLYPH_FOOD, GLYPH_SNAKE_BODY, GLYPH_SNAKE_HEAD_DOWN,
+    GLYPH_SNAKE_HEAD_LEFT, GLYPH_SNAKE_HEAD_RIGHT, GLYPH_SNAKE_HEAD_UP, GLYPH_SNAKE_TAIL,
 };
 use crate::game::{GameState, GameStatus};
 use crate::input::Direction;
@@ -22,38 +19,32 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
     let area = frame.area();
     let play_area = render_hud(frame, area, state, platform, &hud_info);
 
+    let theme = hud_info.theme;
     let block = Block::bordered()
         .title(status_title(state.status, platform))
-        .border_set(border::Set {
-            top_left: GLYPH_BORDER_TOP_LEFT,
-            top_right: GLYPH_BORDER_TOP_RIGHT,
-            bottom_left: GLYPH_BORDER_BOTTOM_LEFT,
-            bottom_right: GLYPH_BORDER_BOTTOM_RIGHT,
-            vertical_left: GLYPH_BORDER_VERTICAL,
-            vertical_right: GLYPH_BORDER_VERTICAL,
-            horizontal_top: GLYPH_BORDER_HORIZONTAL,
-            horizontal_bottom: GLYPH_BORDER_HORIZONTAL,
-        });
+        .border_set(BORDER_HALF_BLOCK)
+        .border_style(Style::new().fg(theme.border_fg).bg(theme.border_bg));
 
     let inner = block.inner(play_area);
     frame.render_widget(block, play_area);
 
-    render_food(frame, inner, state, hud_info.monochrome);
-    render_snake(frame, inner, state, hud_info.monochrome);
+    render_food(frame, inner, state, hud_info.theme);
+    render_snake(frame, inner, state, hud_info.theme);
 
     if state.is_start_screen() {
-        render_start_menu(frame, play_area, hud_info.high_score);
+        render_start_menu(frame, play_area, hud_info.high_score, hud_info.theme);
         return;
     }
 
     match state.status {
-        GameStatus::Paused => render_pause_menu(frame, play_area),
+        GameStatus::Paused => render_pause_menu(frame, play_area, hud_info.theme),
         GameStatus::GameOver => render_game_over_menu(
             frame,
             play_area,
             state.score,
             hud_info.game_over_reference_high_score,
             state.death_reason,
+            hud_info.theme,
         ),
         _ => {}
     }
@@ -76,18 +67,26 @@ fn status_title(status: GameStatus, platform: Platform) -> &'static str {
     }
 }
 
-fn render_food(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrome: bool) {
+fn render_food(
+    frame: &mut Frame<'_>,
+    inner: Rect,
+    state: &GameState,
+    theme: &crate::config::Theme,
+) {
     let Some((x, y)) = logical_to_terminal(inner, state.bounds(), state.food.position) else {
         return;
     };
 
-    let style = style_with_color(monochrome, Color::Red, false);
-
     let buffer = frame.buffer_mut();
-    buffer.set_string(x, y, GLYPH_FOOD, style);
+    buffer.set_string(x, y, GLYPH_FOOD, Style::new().fg(theme.food));
 }
 
-fn render_snake(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrome: bool) {
+fn render_snake(
+    frame: &mut Frame<'_>,
+    inner: Rect,
+    state: &GameState,
+    theme: &crate::config::Theme,
+) {
     let head = state.snake.head();
     let tail = state.snake.segments().last().copied();
 
@@ -103,7 +102,9 @@ fn render_snake(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrom
                 x,
                 y,
                 glyph,
-                style_with_color(monochrome, Color::Green, true),
+                Style::new()
+                    .fg(theme.snake_head)
+                    .add_modifier(Modifier::BOLD),
             );
             continue;
         }
@@ -113,7 +114,7 @@ fn render_snake(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrom
                 x,
                 y,
                 GLYPH_SNAKE_TAIL,
-                style_with_color(monochrome, Color::DarkGray, false),
+                Style::new().fg(theme.snake_tail),
             );
             continue;
         }
@@ -122,20 +123,9 @@ fn render_snake(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrom
             x,
             y,
             GLYPH_SNAKE_BODY,
-            style_with_color(monochrome, Color::Green, false),
+            Style::new().fg(theme.snake_body),
         );
     }
-}
-
-fn style_with_color(monochrome: bool, color: Color, bold: bool) -> Style {
-    let mut style = Style::default();
-    if !monochrome {
-        style = style.fg(color);
-    }
-    if bold {
-        style = style.add_modifier(Modifier::BOLD);
-    }
-    style
 }
 
 fn head_glyph(direction: Direction) -> &'static str {

@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 const APP_DIR_NAME: &str = "snake";
 const SCORE_FILE_NAME: &str = "scores.json";
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct ScoreFile {
     high_score: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    theme_name: Option<String>,
 }
 
 /// Returns the platform-correct score file path.
@@ -27,33 +29,47 @@ pub fn scores_path() -> PathBuf {
 /// Returns `Err` when the file exists but cannot be read or parsed, so the
 /// caller can surface a warning before entering raw terminal mode.
 pub fn load_high_score() -> io::Result<u32> {
-    load_high_score_from_path(&scores_path())
+    load_score_file_from_path(&scores_path()).map(|f| f.high_score)
 }
 
-/// Saves high score to disk, creating parent directories when needed.
+/// Saves high score to disk, preserving any existing theme name.
 pub fn save_high_score(score: u32) -> io::Result<()> {
-    save_high_score_to_path(&scores_path(), score)
+    let path = scores_path();
+    let mut file = load_score_file_from_path(&path).unwrap_or_default();
+    file.high_score = score;
+    write_score_file_to_path(&path, &file)
 }
 
-fn load_high_score_from_path(path: &Path) -> io::Result<u32> {
+/// Loads the saved theme name from disk, or `None` when not set.
+pub fn load_theme_name() -> io::Result<Option<String>> {
+    load_score_file_from_path(&scores_path()).map(|f| f.theme_name)
+}
+
+/// Persists the selected theme name to disk, preserving the high score.
+pub fn save_theme_name(name: &str) -> io::Result<()> {
+    let path = scores_path();
+    let mut file = load_score_file_from_path(&path).unwrap_or_default();
+    file.theme_name = Some(name.to_owned());
+    write_score_file_to_path(&path, &file)
+}
+
+fn load_score_file_from_path(path: &Path) -> io::Result<ScoreFile> {
     let raw = match fs::read_to_string(path) {
         Ok(raw) => raw,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(ScoreFile::default()),
         Err(e) => return Err(e),
     };
 
     serde_json::from_str::<ScoreFile>(&raw)
-        .map(|file| file.high_score)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-fn save_high_score_to_path(path: &Path, score: u32) -> io::Result<()> {
+fn write_score_file_to_path(path: &Path, file: &ScoreFile) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let payload = ScoreFile { high_score: score };
-    let json = serde_json::to_string_pretty(&payload)
+    let json = serde_json::to_string_pretty(file)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
     fs::write(path, json)
@@ -65,16 +81,20 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{load_high_score_from_path, save_high_score_to_path};
+    use super::{load_score_file_from_path, write_score_file_to_path, ScoreFile};
 
     #[test]
     fn score_serialization_round_trip() {
         let path = unique_test_path("round_trip");
 
-        save_high_score_to_path(&path, 42).expect("score save should succeed");
-        let loaded = load_high_score_from_path(&path).expect("load should succeed");
+        let file = ScoreFile {
+            high_score: 42,
+            theme_name: None,
+        };
+        write_score_file_to_path(&path, &file).expect("score save should succeed");
+        let loaded = load_score_file_from_path(&path).expect("load should succeed");
 
-        assert_eq!(loaded, 42);
+        assert_eq!(loaded.high_score, 42);
         cleanup_test_path(&path);
     }
 
@@ -82,8 +102,9 @@ mod tests {
     fn missing_score_file_returns_zero() {
         let path = unique_test_path("missing");
         // Deliberately do not create the file.
-        let loaded = load_high_score_from_path(&path).expect("missing file should return Ok(0)");
-        assert_eq!(loaded, 0);
+        let loaded =
+            load_score_file_from_path(&path).expect("missing file should return Ok(default)");
+        assert_eq!(loaded.high_score, 0);
     }
 
     #[test]
@@ -95,10 +116,25 @@ mod tests {
         fs::write(&path, "not-json").expect("test file write should succeed");
 
         assert!(
-            load_high_score_from_path(&path).is_err(),
+            load_score_file_from_path(&path).is_err(),
             "malformed file should return Err"
         );
 
+        cleanup_test_path(&path);
+    }
+
+    #[test]
+    fn theme_name_survives_round_trip() {
+        let path = unique_test_path("theme_round_trip");
+
+        let file = ScoreFile {
+            high_score: 10,
+            theme_name: Some("Ocean".to_owned()),
+        };
+        write_score_file_to_path(&path, &file).expect("save should succeed");
+        let loaded = load_score_file_from_path(&path).expect("load should succeed");
+
+        assert_eq!(loaded.theme_name.as_deref(), Some("Ocean"));
         cleanup_test_path(&path);
     }
 

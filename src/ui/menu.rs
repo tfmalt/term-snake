@@ -1,13 +1,14 @@
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Clear, Paragraph};
 use ratatui::Frame;
 
+use crate::config::Theme;
 use crate::game::DeathReason;
 
 /// Draws the start screen as a centered popup.
-pub fn render_start_menu(frame: &mut Frame<'_>, area: Rect, high_score: u32) {
+pub fn render_start_menu(frame: &mut Frame<'_>, area: Rect, high_score: u32, theme: &Theme) {
     let popup = centered_popup(area, 70, 45);
     frame.render_widget(Clear, popup);
 
@@ -23,7 +24,7 @@ pub fn render_start_menu(frame: &mut Frame<'_>, area: Rect, high_score: u32) {
             .alignment(Alignment::Center)
             .style(
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(theme.menu_title)
                     .add_modifier(Modifier::BOLD),
             ),
         title_row,
@@ -34,6 +35,8 @@ pub fn render_start_menu(frame: &mut Frame<'_>, area: Rect, high_score: u32) {
         Line::from(""),
         Line::from("[Enter]/[Space]/[A] Start"),
         Line::from("[Q]/[Back] Quit"),
+        Line::from(""),
+        Line::from(format!("[T] Theme: {} \u{25b6}", theme.name)),
     ];
     frame.render_widget(
         Paragraph::new(body)
@@ -45,18 +48,18 @@ pub fn render_start_menu(frame: &mut Frame<'_>, area: Rect, high_score: u32) {
     frame.render_widget(
         Paragraph::new(Line::from("Use arrows/WASD or D-pad/stick to move"))
             .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray)),
+            .style(Style::default().fg(theme.menu_footer)),
         footer_row,
     );
 }
 
 /// Draws the pause screen as a centered popup.
-pub fn render_pause_menu(frame: &mut Frame<'_>, area: Rect) {
+pub fn render_pause_menu(frame: &mut Frame<'_>, area: Rect, theme: &Theme) {
     let popup = centered_popup(area, 60, 30);
     frame.render_widget(Clear, popup);
 
     let lines = vec![
-        Line::from("PAUSED"),
+        Line::from("PAUSED").style(Style::default().fg(theme.menu_title)),
         Line::from(""),
         Line::from("[P]/[Start] Resume"),
         Line::from("[Q]/[Back] Quit"),
@@ -76,13 +79,14 @@ pub fn render_game_over_menu(
     score: u32,
     high_score: u32,
     death_reason: Option<DeathReason>,
+    theme: &Theme,
 ) {
     let popup = centered_popup(area, 70, 40);
     frame.render_widget(Clear, popup);
 
     let is_new_high = score > high_score;
     let lines = vec![
-        Line::from("GAME OVER"),
+        Line::from("GAME OVER").style(Style::default().fg(theme.menu_title)),
         Line::from(""),
         Line::from(format!("Score: {score}")),
         Line::from(format!(

@@ -12,12 +12,12 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Size;
 use ratatui::Terminal;
-use snake::config::{DEFAULT_TICK_INTERVAL_MS, MIN_TICK_INTERVAL_MS, GridSize};
+use snake::config::{DEFAULT_TICK_INTERVAL_MS, MIN_TICK_INTERVAL_MS, GridSize, THEMES};
 use snake::game::{GameState, GameStatus};
 use snake::input::{GameInput, InputConfig, InputHandler};
 use snake::platform::Platform;
 use snake::renderer;
-use snake::score::{load_high_score, save_high_score};
+use snake::score::{load_high_score, load_theme_name, save_high_score, save_theme_name};
 use snake::ui::hud::HudInfo;
 
 #[derive(Debug, Parser)]
@@ -38,7 +38,7 @@ struct Cli {
     #[arg(long = "no-controller")]
     no_controller: bool,
 
-    /// Disable colored rendering.
+    /// Disable colored rendering (forces Mono theme, disables theme cycling).
     #[arg(long = "no-color")]
     no_color: bool,
 
@@ -64,6 +64,19 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         eprintln!("Warning: failed to load high score: {e}");
         0
     });
+
+    let mut selected_theme_idx = if cli.no_color {
+        THEMES
+            .iter()
+            .position(|t| t.name == "Mono")
+            .unwrap_or(THEMES.len() - 1)
+    } else {
+        let saved_name = load_theme_name().unwrap_or(None);
+        saved_name
+            .as_deref()
+            .and_then(|name| THEMES.iter().position(|t| t.name == name))
+            .unwrap_or(0)
+    };
 
     let mut terminal = setup_terminal()?;
 
@@ -95,7 +108,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     high_score,
                     game_over_reference_high_score,
                     controller_enabled,
-                    monochrome: cli.no_color,
+                    theme: &THEMES[selected_theme_idx],
                     debug: cli.debug,
                     debug_line: if cli.debug {
                         format_debug_line(&state, last_input, last_input_tick)
@@ -114,7 +127,16 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 break;
             }
 
-            handle_input(&mut state, game_input);
+            match game_input {
+                GameInput::CycleTheme if state.is_start_screen() && !cli.no_color => {
+                    selected_theme_idx = (selected_theme_idx + 1) % THEMES.len();
+                    if let Err(e) = save_theme_name(THEMES[selected_theme_idx].name) {
+                        eprintln!("Failed to save theme: {e}");
+                    }
+                }
+                GameInput::CycleTheme => {}
+                other => handle_input(&mut state, other),
+            }
         }
 
         let tick_interval = tick_interval_for_speed(state.speed_level);

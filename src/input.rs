@@ -36,6 +36,7 @@ pub enum GameInput {
     Pause,
     Quit,
     Confirm,
+    CycleTheme,
 }
 
 /// Configuration flags for input source initialization.
@@ -177,6 +178,7 @@ fn map_key_event(key_event: KeyEvent) -> Option<GameInput> {
         KeyCode::Char('p') | KeyCode::Char('P') | KeyCode::Esc => Some(GameInput::Pause),
         KeyCode::Char('q') | KeyCode::Char('Q') => Some(GameInput::Quit),
         KeyCode::Enter | KeyCode::Char(' ') => Some(GameInput::Confirm),
+        KeyCode::Char('t') | KeyCode::Char('T') => Some(GameInput::CycleTheme),
         _ => None,
     }
 }

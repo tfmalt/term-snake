@@ -139,7 +139,7 @@ impl GameState {
                     other => other,
                 };
             }
-            GameInput::Quit | GameInput::Confirm => {}
+            GameInput::Quit | GameInput::Confirm | GameInput::CycleTheme => {}
         }
     }
 
