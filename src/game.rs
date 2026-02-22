@@ -1,5 +1,5 @@
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 use crate::config::{GridSize, POINTS_PER_SPEED_LEVEL};
 use crate::food::Food;
@@ -184,7 +184,13 @@ mod tests {
 
     #[test]
     fn snake_grows_after_eating_food() {
-        let mut state = GameState::new_with_seed(GridSize { width: 10, height: 10 }, 1);
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 10,
+                height: 10,
+            },
+            1,
+        );
         state.snake = Snake::new(Position { x: 1, y: 1 }, Direction::Right);
         state.food = Food::new(Position { x: 2, y: 1 });
 
@@ -195,7 +201,13 @@ mod tests {
 
     #[test]
     fn snake_collision_with_wall_sets_game_over() {
-        let mut state = GameState::new_with_seed(GridSize { width: 4, height: 4 }, 2);
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 4,
+                height: 4,
+            },
+            2,
+        );
         state.snake = Snake::new(Position { x: 3, y: 1 }, Direction::Right);
 
         state.tick();
@@ -205,7 +217,13 @@ mod tests {
 
     #[test]
     fn snake_collision_with_self_sets_game_over() {
-        let mut state = GameState::new_with_seed(GridSize { width: 6, height: 6 }, 3);
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 6,
+                height: 6,
+            },
+            3,
+        );
         state.snake = Snake::from_segments(
             vec![
                 Position { x: 2, y: 2 },
@@ -225,7 +243,13 @@ mod tests {
 
     #[test]
     fn score_increments_when_food_is_eaten() {
-        let mut state = GameState::new_with_seed(GridSize { width: 10, height: 10 }, 4);
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 10,
+                height: 10,
+            },
+            4,
+        );
         state.snake = Snake::new(Position { x: 5, y: 5 }, Direction::Right);
         state.food = Food::new(Position { x: 6, y: 5 });
 
@@ -237,13 +261,22 @@ mod tests {
 
     #[test]
     fn starting_speed_level_is_respected() {
-        let state = GameState::new_with_options(GridSize { width: 10, height: 10 }, 3);
+        let state = GameState::new_with_options(
+            GridSize {
+                width: 10,
+                height: 10,
+            },
+            3,
+        );
         assert_eq!(state.speed_level, 3);
     }
 
     #[test]
     fn player_can_turn_at_last_cell_before_wall() {
-        let bounds = GridSize { width: 10, height: 10 };
+        let bounds = GridSize {
+            width: 10,
+            height: 10,
+        };
         let mut state = GameState::new_with_seed(bounds, 10);
         // Place the snake at the second-to-last cell heading right.
         state.snake = Snake::new(Position { x: 8, y: 5 }, Direction::Right);
@@ -265,7 +298,10 @@ mod tests {
 
     #[test]
     fn player_can_reach_top_row_and_turn() {
-        let bounds = GridSize { width: 10, height: 10 };
+        let bounds = GridSize {
+            width: 10,
+            height: 10,
+        };
         let mut state = GameState::new_with_seed(bounds, 10);
         state.snake = Snake::new(Position { x: 5, y: 1 }, Direction::Up);
         state.food = Food::new(Position { x: 9, y: 9 });
@@ -286,7 +322,10 @@ mod tests {
 
     #[test]
     fn player_can_reach_bottom_row_and_turn() {
-        let bounds = GridSize { width: 10, height: 10 };
+        let bounds = GridSize {
+            width: 10,
+            height: 10,
+        };
         let mut state = GameState::new_with_seed(bounds, 10);
         state.snake = Snake::new(Position { x: 5, y: 8 }, Direction::Down);
         state.food = Food::new(Position { x: 9, y: 0 });

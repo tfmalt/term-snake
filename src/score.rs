@@ -81,7 +81,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{load_score_file_from_path, write_score_file_to_path, ScoreFile};
+    use super::{ScoreFile, load_score_file_from_path, write_score_file_to_path};
 
     #[test]
     fn score_serialization_round_trip() {

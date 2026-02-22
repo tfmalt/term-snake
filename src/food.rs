@@ -56,13 +56,13 @@ pub fn spawn_position<R: Rng + ?Sized>(rng: &mut R, bounds: GridSize, snake: &Sn
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     use crate::config::GridSize;
     use crate::input::Direction;
 
-    use super::{spawn_position, Food};
+    use super::{Food, spawn_position};
     use crate::snake::{Position, Snake};
 
     #[test]

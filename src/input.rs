@@ -248,7 +248,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use gilrs::{Axis, Button};
 
-    use super::{map_controller_axis, map_controller_button, map_key_event, Direction, GameInput};
+    use super::{Direction, GameInput, map_controller_axis, map_controller_button, map_key_event};
 
     #[test]
     fn opposite_direction_is_correct() {
