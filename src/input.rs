@@ -58,7 +58,6 @@ impl Default for InputConfig {
 pub struct InputHandler {
     gilrs: Option<Gilrs>,
     last_stick_direction: Option<Direction>,
-    last_keyboard_direction: Option<Direction>,
 }
 
 impl InputHandler {
@@ -68,7 +67,6 @@ impl InputHandler {
         Self {
             gilrs: initialize_gilrs(config),
             last_stick_direction: None,
-            last_keyboard_direction: None,
         }
     }
 
@@ -93,11 +91,10 @@ impl InputHandler {
             }
 
             if let GameInput::Direction(direction) = mapped {
-                if self.last_keyboard_direction == Some(direction) {
-                    continue;
-                }
-                self.last_keyboard_direction = Some(direction);
-                queued_direction.get_or_insert(GameInput::Direction(direction));
+                // Keep the last direction in the batch (most recent intent).
+                // OS key-repeat of the same direction is harmless — the snake's
+                // buffer_direction handles dedup at the game-logic level.
+                queued_direction = Some(GameInput::Direction(direction));
                 continue;
             }
 
