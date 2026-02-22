@@ -95,18 +95,17 @@ pub const THEMES: &[Theme] = &[THEME_CLASSIC, THEME_OCEAN, THEME_NEON, THEME_MON
 
 /// Half-block border set: solid side faces the play area.
 ///
-/// - Top row: `▄` (solid bottom → play area below)
-/// - Bottom row: `▀` (solid top → play area above)
-/// - Left column: `▐` (solid right → play area right)
-/// - Right column: `▌` (solid left → play area left)
-/// - All corners: `█` (fully solid)
+/// - Top row + top corners: `▄` (solid bottom → play area below)
+/// - Bottom row + bottom corners: `▀` (solid top → play area above)
+/// - Left column: `█` (fully solid)
+/// - Right column: `█` (fully solid)
 pub const BORDER_HALF_BLOCK: border::Set = border::Set {
-    top_left: "█",
-    top_right: "█",
-    bottom_left: "█",
-    bottom_right: "█",
-    vertical_left: "▐",
-    vertical_right: "▌",
+    top_left: "▄",
+    top_right: "▄",
+    bottom_left: "▀",
+    bottom_right: "▀",
+    vertical_left: "█",
+    vertical_right: "█",
     horizontal_top: "▄",
     horizontal_bottom: "▀",
 };
