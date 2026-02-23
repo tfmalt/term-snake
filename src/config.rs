@@ -1,5 +1,4 @@
 use ratatui::style::Color;
-use ratatui::symbols::border;
 
 /// Logical grid dimensions passed through the game as a named type.
 ///
@@ -74,20 +73,14 @@ pub fn fallback_theme() -> Theme {
     }
 }
 
-/// Invisible border set used to reserve one-cell wall padding.
-///
-/// The game still keeps a visual/logic buffer around the play area, but the
-/// border glyphs render as spaces so the wall blends into the terminal.
-pub const BORDER_HALF_BLOCK: border::Set = border::Set {
-    top_left: " ",
-    top_right: " ",
-    bottom_left: " ",
-    bottom_right: " ",
-    vertical_left: " ",
-    vertical_right: " ",
-    horizontal_top: " ",
-    horizontal_bottom: " ",
-};
+/// Horizontal margin (columns) around the gameplay viewport.
+pub const PLAY_AREA_MARGIN_X: u16 = 2;
+
+/// Vertical margin (rows) around the gameplay viewport.
+pub const PLAY_AREA_MARGIN_Y: u16 = 1;
+
+/// Bottom margin (rows) below the HUD.
+pub const HUD_BOTTOM_MARGIN_Y: u16 = 1;
 
 /// Upper half-block glyph for compositing.
 pub const GLYPH_HALF_UPPER: &str = "▀";

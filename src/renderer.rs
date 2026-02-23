@@ -1,11 +1,12 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::widgets::Block;
 
-use crate::config::{BORDER_HALF_BLOCK, GLYPH_HALF_LOWER, GLYPH_HALF_UPPER, GridSize, Theme};
-use crate::game::{FoodDensity, GameState, GameStatus};
+use crate::config::{
+    GLYPH_HALF_LOWER, GLYPH_HALF_UPPER, GridSize, PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y, Theme,
+};
+use crate::game::{GameState, GameStatus};
 use crate::platform::Platform;
 use crate::ui::hud::{HudInfo, render_hud};
 use crate::ui::menu::{
@@ -16,7 +17,6 @@ pub struct MenuUiState<'a> {
     pub start_selected_idx: usize,
     pub pause_selected_idx: usize,
     pub game_over_selected_idx: usize,
-    pub food_density: FoodDensity,
     pub start_theme_select: Option<ThemeSelectView<'a>>,
     pub pause_theme_select: Option<ThemeSelectView<'a>>,
 }
@@ -25,7 +25,8 @@ pub struct MenuUiState<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CellKind {
     Empty,
-    Snake,
+    /// Carries the segment index (0 = head) for color banding.
+    Snake(usize),
     Food,
 }
 
@@ -46,14 +47,15 @@ pub fn render(
     );
 
     let play_area = render_hud(frame, area, state, platform, &hud_info);
-    let block = Block::bordered()
-        .border_set(BORDER_HALF_BLOCK)
-        .border_style(Style::new().fg(Color::Reset).bg(Color::Reset));
 
-    let inner = block.inner(play_area);
-    frame.render_widget(block, play_area);
+    let gameplay_area = inset_play_area(play_area);
+    frame.render_widget(
+        Block::default().style(Style::new().bg(theme.field_bg)),
+        gameplay_area,
+    );
+    render_play_area_hud_margin(frame, play_area, gameplay_area, theme);
 
-    render_play_area(frame, inner, state, theme);
+    render_play_area(frame, gameplay_area, state, theme);
 
     if state.is_start_screen() {
         render_start_menu(
@@ -62,7 +64,6 @@ pub fn render(
             hud_info.high_score,
             hud_info.theme,
             menu_ui.start_selected_idx,
-            menu_ui.food_density,
             menu_ui.start_theme_select,
         );
         return;
@@ -74,7 +75,6 @@ pub fn render(
             play_area,
             hud_info.theme,
             menu_ui.pause_selected_idx,
-            menu_ui.food_density,
             menu_ui.pause_theme_select,
         ),
         GameStatus::GameOver => render_game_over_menu(
@@ -98,6 +98,37 @@ pub fn render(
             menu_ui.game_over_selected_idx,
         ),
         _ => {}
+    }
+}
+
+fn inset_play_area(area: Rect) -> Rect {
+    let horizontal_margin = PLAY_AREA_MARGIN_X.saturating_mul(2);
+    let vertical_margin = PLAY_AREA_MARGIN_Y.saturating_mul(2);
+
+    Rect {
+        x: area.x.saturating_add(PLAY_AREA_MARGIN_X),
+        y: area.y.saturating_add(PLAY_AREA_MARGIN_Y),
+        width: area.width.saturating_sub(horizontal_margin),
+        height: area.height.saturating_sub(vertical_margin),
+    }
+}
+
+fn render_play_area_hud_margin(
+    frame: &mut Frame<'_>,
+    play_area: Rect,
+    gameplay_area: Rect,
+    theme: &Theme,
+) {
+    if gameplay_area.bottom() >= play_area.bottom() {
+        return;
+    }
+
+    let y = gameplay_area.bottom();
+    let style = Style::new().fg(theme.terminal_bg).bg(theme.field_bg);
+    let buffer = frame.buffer_mut();
+
+    for x in gameplay_area.x..gameplay_area.right() {
+        buffer.set_string(x, y, GLYPH_HALF_UPPER, style);
     }
 }
 
@@ -152,12 +183,12 @@ fn build_cell_grid(state: &GameState, bounds: GridSize) -> Vec<CellKind> {
         }
     }
 
-    // Snake segments
-    for seg in state.snake.segments() {
+    // Snake segments — index 0 is the head.
+    for (idx, seg) in state.snake.segments().enumerate() {
         if !seg.is_within_bounds(bounds) {
             continue;
         }
-        grid[seg.y as usize * w + seg.x as usize] = CellKind::Snake;
+        grid[seg.y as usize * w + seg.x as usize] = CellKind::Snake(idx);
     }
 
     grid
@@ -193,10 +224,34 @@ fn composite_half_block(
 }
 
 /// Maps a non-empty `CellKind` to its theme color.
+///
+/// Snake body uses alternating 3-segment bands: even bands use the base
+/// `snake_body` color; odd bands have the red channel boosted by 10%.
 fn cell_color(kind: CellKind, theme: &Theme) -> ratatui::style::Color {
     match kind {
-        CellKind::Snake => theme.snake_body,
+        CellKind::Snake(idx) => {
+            let band = idx / 3;
+            if band % 2 == 0 {
+                theme.snake_body
+            } else {
+                redden_color(theme.snake_body, 0.8)
+            }
+        }
         CellKind::Food => theme.food,
         CellKind::Empty => theme.field_bg,
+    }
+}
+
+/// Makes an `Rgb` color appear redder by reducing the green and blue channels
+/// by `factor` (e.g. 0.9 = 10% reduction). Named colors are returned unchanged.
+fn redden_color(color: ratatui::style::Color, factor: f32) -> ratatui::style::Color {
+    use ratatui::style::Color;
+    match color {
+        Color::Rgb(r, g, b) => Color::Rgb(
+            r,
+            (f32::from(g) * factor).round() as u8,
+            (f32::from(b) * factor).round() as u8,
+        ),
+        other => other,
     }
 }

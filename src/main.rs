@@ -12,25 +12,25 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Size;
-use snake::config::{DEFAULT_TICK_INTERVAL_MS, GridSize, MIN_TICK_INTERVAL_MS};
-use snake::game::{FoodDensity, GameState, GameStatus, default_food_density};
-use snake::input::{Direction, GameInput, InputConfig, InputHandler};
-use snake::platform::Platform;
-use snake::renderer::{self, MenuUiState};
-use snake::score::{load_high_score, load_theme_selection, save_high_score, save_theme_selection};
-use snake::theme::ThemeCatalog;
-use snake::ui::hud::HudInfo;
-use snake::ui::menu::ThemeSelectView;
+use terminal_snake::config::{
+    DEFAULT_TICK_INTERVAL_MS, GridSize, HUD_BOTTOM_MARGIN_Y, MIN_TICK_INTERVAL_MS,
+    PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y,
+};
+use terminal_snake::game::{GameState, GameStatus};
+use terminal_snake::input::{Direction, GameInput, InputConfig, InputHandler};
+use terminal_snake::platform::Platform;
+use terminal_snake::renderer::{self, MenuUiState};
+use terminal_snake::score::{
+    load_high_score, load_theme_selection, save_high_score, save_theme_selection,
+};
+use terminal_snake::theme::ThemeCatalog;
+use terminal_snake::ui::hud::HudInfo;
+use terminal_snake::ui::menu::ThemeSelectView;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum ThemeSelectionMode {
     StartMenu,
     PauseMenu,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum FoodCountSetting {
-    Density(FoodDensity),
 }
 
 #[derive(Debug, Parser)]
@@ -91,12 +91,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         enable_controller: !cli.no_controller,
         is_wsl: platform.is_wsl(),
     });
-    let mut food_count_setting = FoodCountSetting::Density(default_food_density());
-    let mut state = GameState::new_with_options_and_food_density(
-        bounds,
-        cli.speed,
-        resolve_food_density(food_count_setting),
-    );
+    let mut state = GameState::new_with_options(bounds, cli.speed);
     state.status = GameStatus::Paused;
     let mut game_over_reference_high_score = high_score;
 
@@ -109,6 +104,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut pause_menu_selected_idx = 0usize;
     let mut game_over_menu_selected_idx = 0usize;
     let mut theme_selection_mode: Option<ThemeSelectionMode> = None;
+    let mut theme_selection_dirty = false;
 
     loop {
         if let Ok(next_bounds) = grid_bounds_from_frame(terminal.size()?, &cli)
@@ -162,7 +158,6 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     start_selected_idx: start_menu_selected_idx,
                     pause_selected_idx: pause_menu_selected_idx,
                     game_over_selected_idx: game_over_menu_selected_idx,
-                    food_density: resolve_food_density(food_count_setting),
                     start_theme_select,
                     pause_theme_select,
                 },
@@ -174,6 +169,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
             last_input_tick = Some(state.tick_count);
 
             if matches!(game_input, GameInput::Quit) {
+                persist_selected_theme_if_dirty(&themes, &mut theme_selection_dirty);
                 break;
             }
 
@@ -182,17 +178,18 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     match game_input {
                         GameInput::Direction(Direction::Up) => {
                             themes.select_previous();
-                            persist_selected_theme(&themes);
+                            theme_selection_dirty = true;
                         }
                         GameInput::Direction(Direction::Down) | GameInput::CycleTheme => {
                             themes.select_next();
-                            persist_selected_theme(&themes);
+                            theme_selection_dirty = true;
                         }
                         GameInput::Confirm
                         | GameInput::Direction(Direction::Right)
                         | GameInput::Pause
                         | GameInput::Direction(Direction::Left) => {
                             theme_selection_mode = None;
+                            persist_selected_theme_if_dirty(&themes, &mut theme_selection_dirty);
                         }
                         _ => {}
                     }
@@ -202,21 +199,22 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
 
                 match game_input {
                     GameInput::Direction(Direction::Up) => {
-                        start_menu_selected_idx = wrap_prev(start_menu_selected_idx, 4);
+                        start_menu_selected_idx = wrap_prev(start_menu_selected_idx, 3);
                     }
                     GameInput::Direction(Direction::Down) => {
-                        start_menu_selected_idx = wrap_next(start_menu_selected_idx, 4);
+                        start_menu_selected_idx = wrap_next(start_menu_selected_idx, 3);
                     }
                     GameInput::Confirm | GameInput::Direction(Direction::Right) => {
                         match start_menu_selected_idx {
                             0 => state.status = GameStatus::Playing,
                             1 => theme_selection_mode = Some(ThemeSelectionMode::StartMenu),
                             2 => {
-                                food_count_setting =
-                                    next_food_count_setting(food_count_setting, bounds);
-                                state.set_food_density(resolve_food_density(food_count_setting));
+                                persist_selected_theme_if_dirty(
+                                    &themes,
+                                    &mut theme_selection_dirty,
+                                );
+                                break;
                             }
-                            3 => break,
                             _ => {}
                         }
                     }
@@ -232,17 +230,18 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     match game_input {
                         GameInput::Direction(Direction::Up) => {
                             themes.select_previous();
-                            persist_selected_theme(&themes);
+                            theme_selection_dirty = true;
                         }
                         GameInput::Direction(Direction::Down) | GameInput::CycleTheme => {
                             themes.select_next();
-                            persist_selected_theme(&themes);
+                            theme_selection_dirty = true;
                         }
                         GameInput::Confirm
                         | GameInput::Direction(Direction::Right)
                         | GameInput::Pause
                         | GameInput::Direction(Direction::Left) => {
                             theme_selection_mode = None;
+                            persist_selected_theme_if_dirty(&themes, &mut theme_selection_dirty);
                         }
                         _ => {}
                     }
@@ -252,18 +251,19 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
 
                 match game_input {
                     GameInput::Direction(Direction::Up) | GameInput::Direction(Direction::Down) => {
-                        pause_menu_selected_idx = wrap_next(pause_menu_selected_idx, 4);
+                        pause_menu_selected_idx = wrap_next(pause_menu_selected_idx, 3);
                     }
                     GameInput::Confirm | GameInput::Direction(Direction::Right) => {
                         match pause_menu_selected_idx {
                             0 => state.status = GameStatus::Playing,
                             1 => theme_selection_mode = Some(ThemeSelectionMode::PauseMenu),
                             2 => {
-                                food_count_setting =
-                                    next_food_count_setting(food_count_setting, bounds);
-                                state.set_food_density(resolve_food_density(food_count_setting));
+                                persist_selected_theme_if_dirty(
+                                    &themes,
+                                    &mut theme_selection_dirty,
+                                );
+                                break;
                             }
-                            3 => break,
                             _ => {}
                         }
                     }
@@ -286,6 +286,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                             state = state.restart();
                             state.status = GameStatus::Paused;
                         } else {
+                            persist_selected_theme_if_dirty(&themes, &mut theme_selection_dirty);
                             break;
                         }
                     }
@@ -338,12 +339,21 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         thread::sleep(Duration::from_millis(16));
     }
 
+    persist_selected_theme_if_dirty(&themes, &mut theme_selection_dirty);
+
     Ok(())
 }
 
 fn persist_selected_theme(catalog: &ThemeCatalog) {
     if let Err(e) = save_theme_selection(catalog.current_id(), &catalog.current_theme().name) {
         eprintln!("Failed to save theme: {e}");
+    }
+}
+
+fn persist_selected_theme_if_dirty(catalog: &ThemeCatalog, dirty: &mut bool) {
+    if *dirty {
+        persist_selected_theme(catalog);
+        *dirty = false;
     }
 }
 
@@ -365,12 +375,14 @@ fn handle_input(state: &mut GameState, input: GameInput) {
 /// Derives grid bounds from the ratatui frame area.
 ///
 /// This uses the exact same dimensions as the renderer, eliminating any
-/// possible mismatch between the logical grid and the visual border.
+/// possible mismatch between the logical grid and the gameplay viewport.
 fn grid_bounds_from_frame(size: Size, cli: &Cli) -> io::Result<GridSize> {
-    let hud_rows: u16 = 2 + u16::from(cli.debug);
+    let hud_rows: u16 = 2 + u16::from(cli.debug) + HUD_BOTTOM_MARGIN_Y;
 
-    let min_w: u16 = 5;
-    let min_h: u16 = 4 + hud_rows;
+    let min_w: u16 = PLAY_AREA_MARGIN_X.saturating_mul(2).saturating_add(1);
+    let min_h: u16 = hud_rows
+        .saturating_add(PLAY_AREA_MARGIN_Y.saturating_mul(2))
+        .saturating_add(1);
     if size.width < min_w || size.height < min_h {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -382,15 +394,20 @@ fn grid_bounds_from_frame(size: Size, cli: &Cli) -> io::Result<GridSize> {
     }
 
     // play_area = full width, full height minus HUD/debug rows.
-    // inner = play_area minus 2 for the border (1 each side).
-    let inner_w = size.width.saturating_sub(2);
-    let inner_h = size.height.saturating_sub(2 + hud_rows);
+    // gameplay_viewport = play_area inset by configured side/top/bottom margins.
+    let viewport_w = size
+        .width
+        .saturating_sub(PLAY_AREA_MARGIN_X.saturating_mul(2));
+    let viewport_h = size
+        .height
+        .saturating_sub(hud_rows)
+        .saturating_sub(PLAY_AREA_MARGIN_Y.saturating_mul(2));
 
     // Each terminal row holds 2 game rows (half-block rendering),
     // so the logical game height is double the available terminal rows.
-    let game_h = inner_h.saturating_mul(2);
+    let game_h = viewport_h.saturating_mul(2);
 
-    let width = cli.width.unwrap_or(inner_w).min(inner_w);
+    let width = cli.width.unwrap_or(viewport_w).min(viewport_w);
     let height = cli.height.unwrap_or(game_h).min(game_h);
 
     Ok(GridSize { width, height })
@@ -458,52 +475,6 @@ fn tick_interval_for_speed(speed_level: u32) -> Duration {
         .saturating_sub(speed_penalty_ms)
         .max(MIN_TICK_INTERVAL_MS);
     Duration::from_millis(clamped_ms)
-}
-
-fn resolve_food_density(setting: FoodCountSetting) -> FoodDensity {
-    match setting {
-        FoodCountSetting::Density(density) => density,
-    }
-}
-
-fn next_food_count_setting(current: FoodCountSetting, bounds: GridSize) -> FoodCountSetting {
-    let available_cells = bounds.total_cells().saturating_sub(1).max(1);
-    let options = food_density_options(available_cells);
-    let current_density = resolve_food_density(current);
-    let idx = options
-        .iter()
-        .position(|density| *density == current_density)
-        .unwrap_or(0);
-    let next_idx = (idx + 1) % options.len();
-    FoodCountSetting::Density(options[next_idx])
-}
-
-fn food_density_options(available_cells: usize) -> Vec<FoodDensity> {
-    let base = [
-        FoodDensity {
-            foods_per: 1,
-            cells_per: 200,
-        },
-        FoodDensity {
-            foods_per: 2,
-            cells_per: 400,
-        },
-        FoodDensity {
-            foods_per: 1,
-            cells_per: 100,
-        },
-        FoodDensity {
-            foods_per: 1,
-            cells_per: 50,
-        },
-    ];
-
-    base.into_iter()
-        .filter(|density| {
-            (available_cells.saturating_mul(density.foods_per) / density.cells_per).max(1)
-                <= available_cells
-        })
-        .collect()
 }
 
 fn wrap_next(current: usize, len: usize) -> usize {

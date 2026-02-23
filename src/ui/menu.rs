@@ -1,13 +1,13 @@
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
-use ratatui::Frame;
 use std::time::Duration;
 
-use crate::block_font::{render_text, FONT_HEIGHT};
-use crate::config::{Theme, GLYPH_HALF_LOWER, GLYPH_HALF_UPPER};
-use crate::game::{DeathReason, FoodDensity};
+use crate::block_font::{FONT_HEIGHT, render_text, text_width};
+use crate::config::{GLYPH_HALF_LOWER, GLYPH_HALF_UPPER, Theme};
+use crate::game::DeathReason;
 use crate::theme::ThemeItem;
 
 pub struct ThemeSelectView<'a> {
@@ -22,59 +22,173 @@ pub fn render_start_menu(
     _high_score: u32,
     theme: &Theme,
     selected_idx: usize,
-    food_density: FoodDensity,
     theme_select: Option<ThemeSelectView<'_>>,
 ) {
-    let popup = centered_popup(area, 76, 58);
+    // If "terminal snake" (block font) + 2-column margin each side doesn't fit,
+    // fall back to plain text "TERMINAL" above block-font "SNAKE".
+    let full_title_width = text_width("terminal") + 3 + text_width("snake");
+    let body = vec![
+        menu_option_line("Start", selected_idx == 0, theme),
+        menu_option_line(format!("Theme:  {}", theme.name), selected_idx == 1, theme),
+        menu_option_line("Quit", selected_idx == 2, theme),
+    ];
+    let menu_height = u16::try_from(body.len()).unwrap_or(u16::MAX);
+
+    // Start layout decision is based on content width at the target popup width.
+    let popup_for_measure = centered_popup_with_height(area, 76, area.height.max(1));
+    let use_full_font = full_title_width + 4 <= usize::from(popup_for_measure.width);
+
+    // In narrow mode, if SNAKE's top block-font row is blank we can overlay
+    // TERMINAL onto it, saving one row of vertical space.
+    let snake_top_blank = render_text("snake")
+        .first()
+        .is_some_and(|r| r.chars().all(|c| c == ' '));
+    let can_overlap = !use_full_font && snake_top_blank;
+
+    // title_row height: full/overlap = FONT_HEIGHT + 1 (version);
+    //                   narrow-no-overlap = 1 (plain) + FONT_HEIGHT + 1 (version).
+    let title_row_height: u16 = if use_full_font || can_overlap { 5 } else { 6 };
+
+    let logo_to_menu_gap = MENU_MARGIN_ROWS.saturating_sub(1);
+    let popup_height = menu_popup_height(title_row_height, menu_height)
+        .saturating_add(4)
+        .saturating_sub(1);
+    let popup = centered_popup_with_height(area, 76, popup_height);
     frame.render_widget(Clear, popup);
     render_menu_panel(frame, popup, theme);
 
-    let [_, title_row, body_row, footer_row, _] = Layout::vertical([
+    let [_, title_row, _, body_row, _, hint_row, copyright_row, _, _] = Layout::vertical([
+        Constraint::Length(MENU_MARGIN_ROWS),
+        Constraint::Length(title_row_height),
+        Constraint::Length(logo_to_menu_gap),
+        Constraint::Length(menu_height),
+        Constraint::Length(MENU_MARGIN_ROWS),
         Constraint::Length(1),
-        Constraint::Length(5),
-        Constraint::Min(5),
-        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(popup);
 
-    let [title_font_row, title_version_row] = Layout::vertical([
-        Constraint::Length(FONT_HEIGHT as u16),
-        Constraint::Length(1),
-    ])
-    .areas(title_row);
+    let popup_width = usize::from(popup.width);
 
-    let title_lines = start_screen_title_lines(theme);
-    frame.render_widget(
-        Paragraph::new(title_lines)
-            .alignment(Alignment::Center)
-            .style(Style::default().bg(theme.ui_bg)),
-        title_font_row,
-    );
+    if use_full_font {
+        let [title_font_row, title_version_row] = Layout::vertical([
+            Constraint::Length(FONT_HEIGHT as u16),
+            Constraint::Length(1),
+        ])
+        .areas(title_row);
 
-    frame.render_widget(
-        Paragraph::new(Line::from(format!("v{}  ", env!("CARGO_PKG_VERSION"))))
-            .alignment(Alignment::Right)
-            .style(Style::default().fg(theme.ui_bright).bg(theme.ui_bg)),
-        title_version_row,
-    );
+        let title_lines = start_screen_title_lines(theme);
+        frame.render_widget(
+            Paragraph::new(title_lines)
+                .alignment(Alignment::Center)
+                .style(Style::default().bg(theme.ui_bg)),
+            title_font_row,
+        );
 
-    let body = vec![
-        menu_option_line("Start", selected_idx == 0, theme),
-        menu_option_line(format!("Theme:  {}", theme.name), selected_idx == 1, theme),
-        menu_option_line(
-            format_food_menu_label(food_density),
-            selected_idx == 2,
-            theme,
-        ),
-        menu_option_line("Quit", selected_idx == 3, theme),
-    ];
+        // Right-align the version with the right edge of the block-font title.
+        // The title ("terminal" + 3-space gap + "snake") is center-aligned in the
+        // popup; ratatui places its right edge at column (popup_width + title_width) / 2.
+        // Padding the version string to that width with Alignment::Left lands it there.
+        let title_right_col = (popup_width + full_title_width) / 2;
+        let version_text = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let pad_to = title_right_col.max(version_text.chars().count());
+        let padded_version = format!("{:>width$}", version_text, width = pad_to);
+        frame.render_widget(
+            Paragraph::new(Line::from(padded_version))
+                .alignment(Alignment::Left)
+                .style(Style::default().fg(theme.ui_bright).bg(theme.ui_bg)),
+            title_version_row,
+        );
+    } else {
+        let snake_width = text_width("snake");
+        let snake_left_col = popup_width.saturating_sub(snake_width) / 2;
+        let padded_terminal = format!("{}{}", " ".repeat(snake_left_col), "TERMINAL");
+        let terminal_style = Style::default()
+            .fg(theme.ui_accent)
+            .add_modifier(Modifier::BOLD)
+            .bg(theme.ui_bg);
 
-    let menu_width = start_menu_content_width(theme, food_density).saturating_add(2);
-    let menu_area = centered_rect_with_max_width(
-        centered_rect_with_max_height(body_row, body.len() as u16),
-        menu_width,
-    );
+        if can_overlap {
+            // SNAKE's top row is blank — render TERMINAL on top of it.
+            // Layout: [FONT_HEIGHT(4), 1(version)] = 5 rows total.
+            let [title_font_row, title_version_row] = Layout::vertical([
+                Constraint::Length(FONT_HEIGHT as u16),
+                Constraint::Length(1),
+            ])
+            .areas(title_row);
+
+            let snake_lines = snake_only_title_lines(theme);
+            frame.render_widget(
+                Paragraph::new(snake_lines)
+                    .alignment(Alignment::Center)
+                    .style(Style::default().bg(theme.ui_bg)),
+                title_font_row,
+            );
+
+            // Overwrite SNAKE row 0 (blank) with TERMINAL.
+            let overlay_row = Rect {
+                height: 1,
+                ..title_font_row
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(padded_terminal))
+                    .alignment(Alignment::Left)
+                    .style(terminal_style),
+                overlay_row,
+            );
+
+            let title_right_col = (popup_width + snake_width) / 2;
+            let version_text = format!("v{}", env!("CARGO_PKG_VERSION"));
+            let pad_to = title_right_col.max(version_text.chars().count());
+            let padded_version = format!("{:>width$}", version_text, width = pad_to);
+            frame.render_widget(
+                Paragraph::new(Line::from(padded_version))
+                    .alignment(Alignment::Left)
+                    .style(Style::default().fg(theme.ui_bright).bg(theme.ui_bg)),
+                title_version_row,
+            );
+        } else {
+            // Can't overlap — TERMINAL gets its own row above SNAKE.
+            // Layout: [1(plain), FONT_HEIGHT(4), 1(version)] = 6 rows total.
+            let [title_plain_row, title_font_row, title_version_row] = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Length(FONT_HEIGHT as u16),
+                Constraint::Length(1),
+            ])
+            .areas(title_row);
+
+            frame.render_widget(
+                Paragraph::new(Line::from(padded_terminal))
+                    .alignment(Alignment::Left)
+                    .style(terminal_style),
+                title_plain_row,
+            );
+
+            let snake_lines = snake_only_title_lines(theme);
+            frame.render_widget(
+                Paragraph::new(snake_lines)
+                    .alignment(Alignment::Center)
+                    .style(Style::default().bg(theme.ui_bg)),
+                title_font_row,
+            );
+
+            let title_right_col = (popup_width + snake_width) / 2;
+            let version_text = format!("v{}", env!("CARGO_PKG_VERSION"));
+            let pad_to = title_right_col.max(version_text.chars().count());
+            let padded_version = format!("{:>width$}", version_text, width = pad_to);
+            frame.render_widget(
+                Paragraph::new(Line::from(padded_version))
+                    .alignment(Alignment::Left)
+                    .style(Style::default().fg(theme.ui_bright).bg(theme.ui_bg)),
+                title_version_row,
+            );
+        }
+    }
+
+    let menu_width = start_menu_content_width(theme).saturating_add(2);
+    let menu_area = centered_rect_with_max_width(body_row, menu_width);
     frame.render_widget(
         Paragraph::new(body)
             .alignment(Alignment::Left)
@@ -85,8 +199,15 @@ pub fn render_start_menu(
     frame.render_widget(
         Paragraph::new(Line::from("Use arrows/WASD or D-pad/stick to move"))
             .alignment(Alignment::Center)
-            .style(Style::default().fg(theme.ui_muted)),
-        footer_row,
+            .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
+        hint_row,
+    );
+
+    frame.render_widget(
+        Paragraph::new(Line::from("Copyright (c) 2026 Thomas Malt"))
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
+        copyright_row,
     );
 
     render_menu_bottom_margin(frame, popup, theme);
@@ -102,30 +223,43 @@ pub fn render_pause_menu(
     area: Rect,
     theme: &Theme,
     selected_idx: usize,
-    food_density: FoodDensity,
     theme_select: Option<ThemeSelectView<'_>>,
 ) {
-    let popup = centered_popup(area, 60, 30);
+    let body = vec![
+        menu_option_line("Resume", selected_idx == 0, theme),
+        menu_option_line(format!("Theme:  {}", theme.name), selected_idx == 1, theme),
+        menu_option_line("Quit", selected_idx == 2, theme),
+    ];
+    let menu_height = u16::try_from(body.len()).unwrap_or(u16::MAX);
+    let title_height: u16 = 1;
+    let popup_height = menu_popup_height(title_height, menu_height);
+    let popup = centered_popup_with_height(area, 60, popup_height);
     frame.render_widget(Clear, popup);
     render_menu_panel(frame, popup, theme);
 
-    let lines = vec![
-        Line::from("PAUSED").style(Style::default().fg(theme.ui_accent)),
-        Line::from(""),
-        menu_option_line("Resume", selected_idx == 0, theme),
-        menu_option_line(format!("Theme:  {}", theme.name), selected_idx == 1, theme),
-        menu_option_line(
-            format_food_menu_label(food_density),
-            selected_idx == 2,
-            theme,
-        ),
-        menu_option_line("Quit", selected_idx == 3, theme),
-    ];
+    let [_, title_row, _, body_row, _] = Layout::vertical([
+        Constraint::Length(MENU_MARGIN_ROWS),
+        Constraint::Length(title_height),
+        Constraint::Length(MENU_MARGIN_ROWS),
+        Constraint::Length(menu_height),
+        Constraint::Length(MENU_MARGIN_ROWS),
+    ])
+    .areas(popup);
+
     frame.render_widget(
-        Paragraph::new(lines)
+        Paragraph::new(Line::from("PAUSED"))
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(theme.ui_accent).bg(theme.ui_bg)),
+        title_row,
+    );
+
+    let menu_width = pause_menu_content_width(theme).saturating_add(2);
+    let menu_area = centered_rect_with_max_width(body_row, menu_width);
+    frame.render_widget(
+        Paragraph::new(body)
             .alignment(Alignment::Left)
             .style(menu_body_style(theme)),
-        popup,
+        menu_area,
     );
 
     render_menu_bottom_margin(frame, popup, theme);
@@ -147,29 +281,20 @@ pub fn render_game_over_menu(
     theme: &Theme,
     selected_idx: usize,
 ) {
-    let popup = centered_popup(area, 70, 45);
-    frame.render_widget(Clear, popup);
-    render_menu_panel(frame, popup, theme);
-
-    let [_, title_row, body_row, footer_row] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(3),
-        Constraint::Min(3),
-        Constraint::Length(2),
-    ])
-    .areas(popup);
+    let title_height = FONT_HEIGHT as u16;
 
     let is_new_high = score > high_score;
-    frame.render_widget(
-        Paragraph::new(Line::from("GAME OVER"))
-            .alignment(Alignment::Center)
-            .style(
+    let game_over_title = render_text("game over")
+        .into_iter()
+        .map(|row| {
+            Line::from(Span::styled(
+                row,
                 Style::default()
-                    .fg(theme.ui_accent)
+                    .fg(theme.ui_text)
                     .add_modifier(Modifier::BOLD),
-            ),
-        title_row,
-    );
+            ))
+        })
+        .collect::<Vec<_>>();
 
     let shown_high_score = if is_new_high { score } else { high_score };
     let seconds = game_length.as_secs_f64();
@@ -179,20 +304,36 @@ pub fn render_game_over_menu(
         0.0
     };
 
+    let score_str = score.to_string();
+    let high_score_str = shown_high_score.to_string();
+    let cause_str = match death_reason {
+        Some(DeathReason::WallCollision) => "hit wall",
+        Some(DeathReason::SelfCollision) => "hit yourself",
+        None => "-",
+    };
+    let game_length_str = format_game_length(game_length);
+    let foods_str = format!("{foods_per_minute:.1}");
+
+    let value_col_width = [
+        "Value",
+        &score_str,
+        &high_score_str,
+        cause_str,
+        &game_length_str,
+        &foods_str,
+    ]
+    .iter()
+    .map(|s| s.len())
+    .max()
+    .unwrap_or(5);
+
     let mut body = vec![
-        table_row("Metric", "Value"),
-        table_row("Score", score.to_string()),
-        table_row("High score", shown_high_score.to_string()),
-        table_row(
-            "Cause",
-            match death_reason {
-                Some(DeathReason::WallCollision) => "hit wall".to_string(),
-                Some(DeathReason::SelfCollision) => "hit yourself".to_string(),
-                None => "-".to_string(),
-            },
-        ),
-        table_row("Game length", format_game_length(game_length)),
-        table_row("Food/min", format!("{foods_per_minute:.1}")),
+        table_header_row("Metric", "Value", value_col_width, theme),
+        table_row("Score", &score_str, value_col_width, theme),
+        table_row("High score", &high_score_str, value_col_width, theme),
+        table_row("Cause", cause_str, value_col_width, theme),
+        table_row("Game length", &game_length_str, value_col_width, theme),
+        table_row("Food/min", &foods_str, value_col_width, theme),
         Line::from(""),
     ];
 
@@ -204,17 +345,43 @@ pub fn render_game_over_menu(
     body.push(menu_option_line("Play Again", selected_idx == 0, theme));
     body.push(menu_option_line("Quit", selected_idx == 1, theme));
 
+    let menu_height = u16::try_from(body.len()).unwrap_or(u16::MAX);
+    let popup_height = menu_popup_height(title_height, menu_height).saturating_add(1);
+    let popup = centered_popup_with_height(area, 70, popup_height);
+    frame.render_widget(Clear, popup);
+    render_menu_panel(frame, popup, theme);
+
+    let [_, title_row, _, body_row, _, footer_row] = Layout::vertical([
+        Constraint::Length(MENU_MARGIN_ROWS),
+        Constraint::Length(title_height),
+        Constraint::Length(MENU_MARGIN_ROWS),
+        Constraint::Length(menu_height),
+        Constraint::Length(MENU_MARGIN_ROWS),
+        Constraint::Length(1),
+    ])
+    .areas(popup);
+
+    frame.render_widget(
+        Paragraph::new(game_over_title)
+            .alignment(Alignment::Center)
+            .style(Style::default().bg(theme.ui_bg)),
+        title_row,
+    );
+
+    // label cell (16) + "│" (1) + value cell (2 + value_col_width) = 19 + value_col_width
+    let table_width = u16::try_from(19 + value_col_width).unwrap_or(u16::MAX);
+    let centered_body = centered_rect_with_max_width(body_row, table_width);
     frame.render_widget(
         Paragraph::new(body)
             .alignment(Alignment::Left)
             .style(menu_body_style(theme)),
-        body_row,
+        centered_body,
     );
 
     frame.render_widget(
         Paragraph::new(Line::from("Use arrows/WASD or D-pad/stick to move"))
             .alignment(Alignment::Center)
-            .style(Style::default().fg(theme.ui_muted)),
+            .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
         footer_row,
     );
 
@@ -237,6 +404,25 @@ fn centered_popup(area: Rect, width_percent: u16, height_percent: u16) -> Rect {
     .areas(mid);
 
     center
+}
+
+fn centered_popup_with_height(area: Rect, width_percent: u16, desired_height: u16) -> Rect {
+    let [_, center, _] = Layout::horizontal([
+        Constraint::Percentage((100 - width_percent) / 2),
+        Constraint::Percentage(width_percent),
+        Constraint::Percentage((100 - width_percent) / 2),
+    ])
+    .areas(area);
+
+    let popup_height = desired_height.min(area.height).max(1);
+    let y = area.y + area.height.saturating_sub(popup_height) / 2;
+
+    Rect {
+        x: center.x,
+        y,
+        width: center.width,
+        height: popup_height,
+    }
 }
 
 fn render_theme_select_list(
@@ -438,11 +624,26 @@ fn start_screen_title_lines(theme: &Theme) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn start_menu_content_width(theme: &Theme, food_density: FoodDensity) -> u16 {
+/// Renders only "snake" in block font — used when the terminal is too narrow for
+/// the full "terminal snake" side-by-side title.
+fn snake_only_title_lines(theme: &Theme) -> Vec<Line<'static>> {
+    render_text("snake")
+        .into_iter()
+        .map(|row| {
+            Line::from(Span::styled(
+                row,
+                Style::default()
+                    .fg(theme.ui_text)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect()
+}
+
+fn start_menu_content_width(theme: &Theme) -> u16 {
     let labels = [
         "Start".to_string(),
         format!("Theme:  {}", theme.name),
-        format_food_menu_label(food_density),
         "Quit".to_string(),
     ];
 
@@ -455,6 +656,32 @@ fn start_menu_content_width(theme: &Theme, food_density: FoodDensity) -> u16 {
 
     widest.min(u16::MAX as usize) as u16
 }
+
+fn pause_menu_content_width(theme: &Theme) -> u16 {
+    let labels = [
+        "Resume".to_string(),
+        format!("Theme:  {}", theme.name),
+        "Quit".to_string(),
+    ];
+
+    let widest = labels
+        .iter()
+        .map(|label| label.chars().count())
+        .max()
+        .unwrap_or(0)
+        .saturating_add(2);
+
+    widest.min(u16::MAX as usize) as u16
+}
+
+fn menu_popup_height(title_rows: u16, menu_rows: u16) -> u16 {
+    MENU_MARGIN_ROWS
+        .saturating_mul(3)
+        .saturating_add(title_rows)
+        .saturating_add(menu_rows)
+}
+
+const MENU_MARGIN_ROWS: u16 = 2;
 
 fn centered_rect_with_max_width(area: Rect, max_width: u16) -> Rect {
     if area.width <= max_width {
@@ -471,30 +698,39 @@ fn centered_rect_with_max_width(area: Rect, max_width: u16) -> Rect {
     }
 }
 
-fn centered_rect_with_max_height(area: Rect, max_height: u16) -> Rect {
-    if area.height <= max_height {
-        return area;
-    }
-
-    let height = max_height.max(1);
-    let y = area.y + (area.height - height) / 2;
-    Rect {
-        x: area.x,
-        y,
-        width: area.width,
-        height,
-    }
+fn table_header_row(
+    label: &str,
+    value: &str,
+    value_col_width: usize,
+    theme: &Theme,
+) -> Line<'static> {
+    let style = Style::default()
+        .fg(theme.ui_text)
+        .add_modifier(Modifier::REVERSED);
+    Line::from(vec![
+        Span::styled(format!(" {label:<14} "), style),
+        Span::styled("│", style),
+        Span::styled(format!(" {value:<value_col_width$} "), style),
+    ])
 }
 
-fn format_food_menu_label(food_density: FoodDensity) -> String {
-    format!(
-        "Food:   {}/{}",
-        food_density.foods_per, food_density.cells_per
-    )
-}
-
-fn table_row(label: &str, value: impl AsRef<str>) -> Line<'static> {
-    Line::from(format!("{label:<14} {value}", value = value.as_ref()))
+fn table_row(
+    label: &str,
+    value: impl AsRef<str>,
+    value_col_width: usize,
+    theme: &Theme,
+) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!(" {label:<14} "),
+            Style::default().fg(theme.ui_bright),
+        ),
+        Span::styled("│", Style::default().fg(theme.ui_text)),
+        Span::styled(
+            format!(" {:<value_col_width$} ", value.as_ref()),
+            Style::default().fg(theme.ui_text),
+        ),
+    ])
 }
 
 fn format_game_length(duration: Duration) -> String {

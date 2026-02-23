@@ -4,9 +4,11 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::config::Theme;
+use crate::config::{GLYPH_HALF_UPPER, HUD_BOTTOM_MARGIN_Y, PLAY_AREA_MARGIN_X, Theme};
 use crate::game::{GameState, GameStatus};
 use crate::platform::Platform;
+
+const HUD_INNER_MARGIN_X: u16 = 1;
 
 /// Supplemental values displayed by the HUD rows.
 #[derive(Debug, Clone)]
@@ -31,13 +33,36 @@ pub fn render_hud(
     info: &HudInfo<'_>,
 ) -> Rect {
     let debug_height = u16::from(info.debug);
-    let [play_area, score_area, status_area, debug_area] = Layout::vertical([
+    let [
+        play_area,
+        score_area,
+        status_area,
+        debug_area,
+        bottom_margin,
+    ] = Layout::vertical([
         Constraint::Min(0),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(debug_height),
+        Constraint::Length(HUD_BOTTOM_MARGIN_Y),
     ])
     .areas(area);
+
+    let score_band = inset_horizontal(score_area, PLAY_AREA_MARGIN_X);
+    let status_band = inset_horizontal(status_area, PLAY_AREA_MARGIN_X);
+    let debug_band = inset_horizontal(debug_area, PLAY_AREA_MARGIN_X);
+
+    let score_area = inset_horizontal(score_band, HUD_INNER_MARGIN_X);
+    let status_area = inset_horizontal(status_band, HUD_INNER_MARGIN_X);
+    let debug_area = inset_horizontal(debug_band, HUD_INNER_MARGIN_X);
+
+    // Paint the HUD rows with field_bg before individual widgets render on top.
+    // Without this, the terminal_bg painted by renderer.rs bleeds through any
+    // paragraph that does not set an explicit bg, and the unused left quarter
+    // of the status row would remain terminal_bg.
+    let hud_bg = Style::default().bg(info.theme.field_bg);
+    frame.render_widget(Paragraph::new("").style(hud_bg), score_band);
+    frame.render_widget(Paragraph::new("").style(hud_bg), status_band);
 
     // Score line: Score | Speed | Hi + flags
     let [left, center, right] = Layout::horizontal([
@@ -103,6 +128,7 @@ pub fn render_hud(
     );
 
     if info.debug {
+        frame.render_widget(Paragraph::new("").style(hud_bg), debug_band);
         let debug_width = bottom_info_width(dimensions_text.as_str(), food_count_text.as_str())
             .min(u16::MAX as usize) as u16;
         let [debug_left, debug_right] =
@@ -127,7 +153,31 @@ pub fn render_hud(
         );
     }
 
+    render_hud_bottom_margin(frame, bottom_margin, info.theme);
+
     play_area
+}
+
+fn inset_horizontal(area: Rect, margin: u16) -> Rect {
+    let total_margin = margin.saturating_mul(2);
+    Rect {
+        x: area.x.saturating_add(margin),
+        y: area.y,
+        width: area.width.saturating_sub(total_margin),
+        height: area.height,
+    }
+}
+
+fn render_hud_bottom_margin(frame: &mut Frame<'_>, bottom_margin: Rect, theme: &Theme) {
+    let margin_band = inset_horizontal(bottom_margin, PLAY_AREA_MARGIN_X);
+    let style = Style::default().fg(theme.field_bg).bg(theme.terminal_bg);
+    let buffer = frame.buffer_mut();
+
+    for y in margin_band.y..margin_band.bottom() {
+        for x in margin_band.x..margin_band.right() {
+            buffer.set_string(x, y, GLYPH_HALF_UPPER, style);
+        }
+    }
 }
 
 fn status_label(state: &GameState, platform: Platform) -> &'static str {
