@@ -1,0 +1,14 @@
+{
+  "theme": {
+    "snake_head": 2,
+    "snake_body": 2,
+    "snake_tail": 2,
+    "food":        1,
+    "terminal_bg": "none",
+    "field_bg":    "none",
+    "ui_bg":      "none",
+    "ui_text":    6,
+    "ui_accent":  2,
+    "ui_muted":   8
+  }
+}

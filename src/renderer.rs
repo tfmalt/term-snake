@@ -1,33 +1,54 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::widgets::Block;
 
 use crate::config::{BORDER_HALF_BLOCK, GLYPH_HALF_LOWER, GLYPH_HALF_UPPER, GridSize, Theme};
-use crate::game::{GameState, GameStatus};
+use crate::game::{FoodDensity, GameState, GameStatus};
 use crate::platform::Platform;
 use crate::ui::hud::{HudInfo, render_hud};
-use crate::ui::menu::{render_game_over_menu, render_pause_menu, render_start_menu};
+use crate::ui::menu::{
+    ThemeSelectView, render_game_over_menu, render_pause_menu, render_start_menu,
+};
+
+pub struct MenuUiState<'a> {
+    pub start_selected_idx: usize,
+    pub pause_selected_idx: usize,
+    pub game_over_selected_idx: usize,
+    pub food_density: FoodDensity,
+    pub start_theme_select: Option<ThemeSelectView<'a>>,
+    pub pause_theme_select: Option<ThemeSelectView<'a>>,
+}
 
 /// What occupies a single logical game cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CellKind {
     Empty,
-    Head,
-    Body,
-    Tail,
+    Snake,
     Food,
 }
 
 /// Renders the full game frame from immutable state.
-pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_info: HudInfo) {
+pub fn render(
+    frame: &mut Frame<'_>,
+    state: &GameState,
+    platform: Platform,
+    hud_info: HudInfo<'_>,
+    menu_ui: MenuUiState<'_>,
+) {
     let area = frame.area();
-    let play_area = render_hud(frame, area, state, platform, &hud_info);
 
     let theme = hud_info.theme;
+    frame.render_widget(
+        Block::default().style(Style::new().bg(theme.terminal_bg)),
+        area,
+    );
+
+    let play_area = render_hud(frame, area, state, platform, &hud_info);
     let block = Block::bordered()
         .border_set(BORDER_HALF_BLOCK)
-        .border_style(Style::new().fg(theme.border_fg).bg(theme.border_bg));
+        .border_style(Style::new().fg(Color::Reset).bg(Color::Reset));
 
     let inner = block.inner(play_area);
     frame.render_widget(block, play_area);
@@ -35,19 +56,46 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
     render_play_area(frame, inner, state, theme);
 
     if state.is_start_screen() {
-        render_start_menu(frame, play_area, hud_info.high_score, hud_info.theme);
+        render_start_menu(
+            frame,
+            play_area,
+            hud_info.high_score,
+            hud_info.theme,
+            menu_ui.start_selected_idx,
+            menu_ui.food_density,
+            menu_ui.start_theme_select,
+        );
         return;
     }
 
     match state.status {
-        GameStatus::Paused => render_pause_menu(frame, play_area, hud_info.theme),
+        GameStatus::Paused => render_pause_menu(
+            frame,
+            play_area,
+            hud_info.theme,
+            menu_ui.pause_selected_idx,
+            menu_ui.food_density,
+            menu_ui.pause_theme_select,
+        ),
         GameStatus::GameOver => render_game_over_menu(
             frame,
             play_area,
             state.score,
             hud_info.game_over_reference_high_score,
             state.death_reason,
+            state.elapsed_duration(),
             hud_info.theme,
+            menu_ui.game_over_selected_idx,
+        ),
+        GameStatus::Victory => render_game_over_menu(
+            frame,
+            play_area,
+            state.score,
+            hud_info.game_over_reference_high_score,
+            state.death_reason,
+            state.elapsed_duration(),
+            hud_info.theme,
+            menu_ui.game_over_selected_idx,
         ),
         _ => {}
     }
@@ -97,28 +145,19 @@ fn build_cell_grid(state: &GameState, bounds: GridSize) -> Vec<CellKind> {
     let mut grid = vec![CellKind::Empty; w * h];
 
     // Food
-    let fp = state.food.position;
-    if fp.is_within_bounds(bounds) {
-        grid[fp.y as usize * w + fp.x as usize] = CellKind::Food;
+    for food in &state.foods {
+        let fp = food.position;
+        if fp.is_within_bounds(bounds) {
+            grid[fp.y as usize * w + fp.x as usize] = CellKind::Food;
+        }
     }
 
-    // Snake segments (iterate in order: head first, tail last)
-    let head = state.snake.head();
-    let tail = state.snake.segments().last().copied();
-    let len = state.snake.len();
-
+    // Snake segments
     for seg in state.snake.segments() {
         if !seg.is_within_bounds(bounds) {
             continue;
         }
-        let kind = if *seg == head {
-            CellKind::Head
-        } else if len > 1 && Some(*seg) == tail {
-            CellKind::Tail
-        } else {
-            CellKind::Body
-        };
-        grid[seg.y as usize * w + seg.x as usize] = kind;
+        grid[seg.y as usize * w + seg.x as usize] = CellKind::Snake;
     }
 
     grid
@@ -130,7 +169,7 @@ fn composite_half_block(
     bot: CellKind,
     theme: &Theme,
 ) -> (&'static str, ratatui::style::Color, ratatui::style::Color) {
-    let bg = theme.play_bg;
+    let bg = theme.field_bg;
 
     match (top, bot) {
         (CellKind::Empty, CellKind::Empty) => (" ", bg, bg),
@@ -156,10 +195,8 @@ fn composite_half_block(
 /// Maps a non-empty `CellKind` to its theme color.
 fn cell_color(kind: CellKind, theme: &Theme) -> ratatui::style::Color {
     match kind {
-        CellKind::Head => theme.snake_head,
-        CellKind::Body => theme.snake_body,
-        CellKind::Tail => theme.snake_tail,
+        CellKind::Snake => theme.snake_body,
         CellKind::Food => theme.food,
-        CellKind::Empty => theme.play_bg,
+        CellKind::Empty => theme.field_bg,
     }
 }

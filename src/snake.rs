@@ -50,11 +50,12 @@ pub struct Snake {
 }
 
 impl Snake {
-    /// Creates a one-cell snake at `start` with the provided direction.
+    /// Creates a two-cell snake at `start` with the provided direction.
     #[must_use]
     pub fn new(start: Position, direction: Direction) -> Self {
         let mut body = VecDeque::new();
         body.push_front(start);
+        body.push_back(initial_tail_segment(start, direction));
 
         Self {
             body,
@@ -191,6 +192,34 @@ impl Snake {
     pub fn segments(&self) -> impl Iterator<Item = &Position> {
         self.body.iter()
     }
+
+    /// Wraps all segments into the provided bounds.
+    pub fn wrap_into_bounds(&mut self, bounds: GridSize) {
+        for segment in &mut self.body {
+            *segment = segment.wrapped(bounds);
+        }
+    }
+}
+
+fn initial_tail_segment(head: Position, direction: Direction) -> Position {
+    match direction {
+        Direction::Up => Position {
+            x: head.x,
+            y: head.y + 1,
+        },
+        Direction::Down => Position {
+            x: head.x,
+            y: head.y - 1,
+        },
+        Direction::Left => Position {
+            x: head.x + 1,
+            y: head.y,
+        },
+        Direction::Right => Position {
+            x: head.x - 1,
+            y: head.y,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -224,7 +253,7 @@ mod tests {
         });
 
         assert_eq!(snake.head(), Position { x: 6, y: 5 });
-        assert_eq!(snake.len(), 1);
+        assert_eq!(snake.len(), 2);
     }
 
     #[test]
@@ -237,7 +266,7 @@ mod tests {
             height: 20,
         });
 
-        assert_eq!(snake.len(), 2);
+        assert_eq!(snake.len(), 3);
     }
 
     #[test]

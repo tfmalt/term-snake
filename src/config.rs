@@ -24,89 +24,66 @@ impl GridSize {
 /// In half-block rendering mode every entity is a solid colored block.
 /// The `snake_head`, `snake_body`, `snake_tail`, and `food` fields each
 /// specify the solid block color for that entity.
-#[derive(Debug)]
+///
+/// UI fields (`ui_bg`, `ui_text`, `ui_accent`, `ui_muted`) style the HUD
+/// and menu panels. JSON theme keys match these field names 1:1.
+#[derive(Debug, Clone)]
 pub struct Theme {
-    pub name: &'static str,
-    /// Solid block color for the snake head.
+    pub name: String,
+    /// Solid block color for the snake head segment.
     pub snake_head: Color,
     /// Solid block color for body segments.
     pub snake_body: Color,
     /// Solid block color for the tail segment.
     pub snake_tail: Color,
-    /// Solid block color for food.
+    /// Solid block color for food items.
     pub food: Color,
-    /// Background color for empty play-area cells.
-    pub play_bg: Color,
-    pub border_fg: Color,
-    pub border_bg: Color,
-    pub hud_score: Color,
-    pub menu_title: Color,
-    pub menu_footer: Color,
+    /// Background color painted across the entire terminal before all other layers.
+    /// Set to `Color::Reset` to use the terminal's own default background.
+    pub terminal_bg: Color,
+    /// Background color for empty play-field cells.
+    pub field_bg: Color,
+    /// Background color for menu panels and popups.
+    pub ui_bg: Color,
+    /// Primary text color used in the HUD, score display, and menu body.
+    pub ui_text: Color,
+    /// Accent color for menu titles and selected-option highlights.
+    pub ui_accent: Color,
+    /// Subdued color for footer hints and secondary labels.
+    pub ui_muted: Color,
 }
 
-/// Classic blue snake on dark theme.
-pub const THEME_CLASSIC: Theme = Theme {
-    name: "Classic",
-    snake_head: Color::White,
-    snake_body: Color::Blue,
-    snake_tail: Color::DarkGray,
-    food: Color::Red,
-    play_bg: Color::Black,
-    border_fg: Color::White,
-    border_bg: Color::DarkGray,
-    hud_score: Color::White,
-    menu_title: Color::Green,
-    menu_footer: Color::DarkGray,
-};
+/// Emergency fallback theme used when no external/bundled themes load.
+#[must_use]
+pub fn fallback_theme() -> Theme {
+    Theme {
+        name: "fallback".to_owned(),
+        snake_head: Color::White,
+        snake_body: Color::Blue,
+        snake_tail: Color::DarkGray,
+        food: Color::Red,
+        terminal_bg: Color::Reset,
+        field_bg: Color::Black,
+        ui_bg: Color::DarkGray,
+        ui_text: Color::White,
+        ui_accent: Color::Green,
+        ui_muted: Color::DarkGray,
+    }
+}
 
-/// Ocean cyan theme.
-pub const THEME_OCEAN: Theme = Theme {
-    name: "Ocean",
-    snake_head: Color::White,
-    snake_body: Color::Cyan,
-    snake_tail: Color::DarkGray,
-    food: Color::Yellow,
-    play_bg: Color::Black,
-    border_fg: Color::Cyan,
-    border_bg: Color::DarkGray,
-    hud_score: Color::Cyan,
-    menu_title: Color::Cyan,
-    menu_footer: Color::DarkGray,
-};
-
-/// Neon magenta/yellow theme.
-pub const THEME_NEON: Theme = Theme {
-    name: "Neon",
-    snake_head: Color::White,
-    snake_body: Color::Magenta,
-    snake_tail: Color::DarkGray,
-    food: Color::Yellow,
-    play_bg: Color::Black,
-    border_fg: Color::Magenta,
-    border_bg: Color::Black,
-    hud_score: Color::Magenta,
-    menu_title: Color::Magenta,
-    menu_footer: Color::DarkGray,
-};
-
-/// All available themes in cycle order.
-pub const THEMES: &[Theme] = &[THEME_CLASSIC, THEME_OCEAN, THEME_NEON];
-
-/// Half-block border set: solid side faces the play area.
+/// Invisible border set used to reserve one-cell wall padding.
 ///
-/// - Top row + top corners: `▄` (solid bottom -> play area below)
-/// - Bottom row + bottom corners: `▀` (solid top -> play area above)
-/// - Left column: `█` (fully solid)
-/// - Right column: `█` (fully solid)
+/// The game still keeps a visual/logic buffer around the play area, but the
+/// border glyphs render as spaces so the wall blends into the terminal.
 pub const BORDER_HALF_BLOCK: border::Set = border::Set {
-    top_left: "▄",
-    top_right: "▄",
-    bottom_left: "▀",
-    bottom_right: "▀",
-    vertical_left: "█",
-    vertical_right: "█",
-    horizontal_top: "▄",
-    horizontal_bottom: "▀",
+    top_left: " ",
+    top_right: " ",
+    bottom_left: " ",
+    bottom_right: " ",
+    vertical_left: " ",
+    vertical_right: " ",
+    horizontal_top: " ",
+    horizontal_bottom: " ",
 };
 
 /// Upper half-block glyph for compositing.

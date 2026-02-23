@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# themecolors — preview all colors defined in a theme JSON file
+# Usage: themecolors <theme.json>
+
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: themecolors <theme.json>" >&2
+  exit 1
+fi
+
+file="$1"
+
+if [[ ! -f "$file" ]]; then
+  echo "Error: file not found: $file" >&2
+  exit 1
+fi
+
+if ! command -v jq &>/dev/null; then
+  echo "Error: jq is required but not installed." >&2
+  exit 1
+fi
+
+swatch() {
+  local name="$1"
+  local hex="$2"
+  # Strip leading # if present
+  hex="${hex#\#}"
+  local r=$((16#${hex:0:2}))
+  local g=$((16#${hex:2:2}))
+  local b=$((16#${hex:4:2}))
+  printf "\033[38;2;%d;%d;%dm█████\033[0m \033[38;2;%d;%d;%dm%-20s\033[0m #%s\n" \
+    "$r" "$g" "$b" "$r" "$g" "$b" "$name" "$hex"
+}
+
+echo ""
+echo "Theme: $file"
+echo "══════════════════════════════════════"
+
+# Print defs section if present
+defs=$(jq -r '.defs // empty | to_entries[] | "\(.key) \(.value)"' "$file" 2>/dev/null || true)
+if [[ -n "$defs" ]]; then
+  echo ""
+  echo "── defs ──────────────────────────────"
+  while IFS=' ' read -r name value; do
+    swatch "$name" "$value"
+  done <<< "$defs"
+fi
+
+# Collect def values for resolving references in theme section
+declare -A def_map
+while IFS=' ' read -r name value; do
+  def_map["$name"]="$value"
+done < <(jq -r '.defs // {} | to_entries[] | "\(.key) \(.value)"' "$file" 2>/dev/null || true)
+
+# Print theme section, resolving any string references back to defs
+theme=$(jq -r '.theme // empty | to_entries[] | "\(.key) \(.value)"' "$file" 2>/dev/null || true)
+if [[ -n "$theme" ]]; then
+  echo ""
+  echo "── theme ─────────────────────────────"
+  while IFS=' ' read -r name value; do
+    # If value doesn't start with #, treat it as a reference to defs
+    if [[ "$value" != \#* ]]; then
+      resolved="${def_map[$value]:-}"
+      if [[ -n "$resolved" ]]; then
+        swatch "$name" "$resolved"
+      else
+        printf "  %-20s %s (unresolved)\n" "$name" "$value"
+      fi
+    else
+      swatch "$name" "$value"
+    fi
+  done <<< "$theme"
+fi
+
+echo ""

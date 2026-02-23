@@ -1,0 +1,23 @@
+{
+  "defs": {
+    "nord0":  "#2E3440",
+    "nord1":  "#3B4252",
+    "nord3":  "#4C566A",
+    "nord7":  "#8FBCBB",
+    "nord8":  "#88C0D0",
+    "nord10": "#5E81AC",
+    "nord11": "#BF616A"
+  },
+  "theme": {
+    "snake_head": "nord7",
+    "snake_body": "nord7",
+    "snake_tail": "nord7",
+    "food":        "nord11",
+    "terminal_bg": "nord0",
+    "field_bg":    "nord0",
+    "ui_bg":      "nord1",
+    "ui_text":    { "dark": "nord8", "light": "nord10" },
+    "ui_accent":  "nord7",
+    "ui_muted":   "nord3"
+  }
+}

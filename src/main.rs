@@ -12,13 +12,26 @@ use crossterm::terminal::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Size;
-use snake::config::{DEFAULT_TICK_INTERVAL_MS, GridSize, MIN_TICK_INTERVAL_MS, THEMES};
-use snake::game::{GameState, GameStatus};
-use snake::input::{GameInput, InputConfig, InputHandler};
+use snake::config::{DEFAULT_TICK_INTERVAL_MS, GridSize, MIN_TICK_INTERVAL_MS};
+use snake::game::{FoodDensity, GameState, GameStatus, default_food_density};
+use snake::input::{Direction, GameInput, InputConfig, InputHandler};
 use snake::platform::Platform;
-use snake::renderer;
-use snake::score::{load_high_score, load_theme_name, save_high_score, save_theme_name};
+use snake::renderer::{self, MenuUiState};
+use snake::score::{load_high_score, load_theme_selection, save_high_score, save_theme_selection};
+use snake::theme::ThemeCatalog;
 use snake::ui::hud::HudInfo;
+use snake::ui::menu::ThemeSelectView;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum ThemeSelectionMode {
+    StartMenu,
+    PauseMenu,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum FoodCountSetting {
+    Density(FoodDensity),
+}
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -61,25 +74,29 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         0
     });
 
-    let mut selected_theme_idx = {
-        let saved_name = load_theme_name().unwrap_or(None);
-        saved_name
-            .as_deref()
-            .and_then(|name| THEMES.iter().position(|t| t.name == name))
-            .unwrap_or(0)
-    };
+    let mut themes = ThemeCatalog::load();
+    if let Some(saved_theme) = load_theme_selection().unwrap_or(None)
+        && !themes.select_by_id(&saved_theme)
+    {
+        eprintln!("Warning: saved theme '{saved_theme}' is unavailable; using default.");
+    }
 
     let mut terminal = setup_terminal()?;
 
     // Derive grid bounds from ratatui's own size so the logical grid
     // matches the exact frame area the renderer will use.
     let frame_area = terminal.size()?;
-    let bounds = grid_bounds_from_frame(frame_area, &cli)?;
+    let mut bounds = grid_bounds_from_frame(frame_area, &cli)?;
     let mut input = InputHandler::new(InputConfig {
         enable_controller: !cli.no_controller,
         is_wsl: platform.is_wsl(),
     });
-    let mut state = GameState::new_with_options(bounds, cli.speed);
+    let mut food_count_setting = FoodCountSetting::Density(default_food_density());
+    let mut state = GameState::new_with_options_and_food_density(
+        bounds,
+        cli.speed,
+        resolve_food_density(food_count_setting),
+    );
     state.status = GameStatus::Paused;
     let mut game_over_reference_high_score = high_score;
 
@@ -88,9 +105,43 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut last_status = state.status;
     let mut last_input: Option<GameInput> = None;
     let mut last_input_tick: Option<u64> = None;
+    let mut start_menu_selected_idx = 0usize;
+    let mut pause_menu_selected_idx = 0usize;
+    let mut game_over_menu_selected_idx = 0usize;
+    let mut theme_selection_mode: Option<ThemeSelectionMode> = None;
 
     loop {
+        if let Ok(next_bounds) = grid_bounds_from_frame(terminal.size()?, &cli)
+            && next_bounds != bounds
+        {
+            bounds = next_bounds;
+            state.resize_bounds(bounds);
+        }
+
         terminal.draw(|frame| {
+            let start_theme_select = if state.is_start_screen()
+                && theme_selection_mode == Some(ThemeSelectionMode::StartMenu)
+            {
+                Some(ThemeSelectView {
+                    selected_idx: themes.current_index(),
+                    themes: themes.items(),
+                })
+            } else {
+                None
+            };
+
+            let pause_theme_select = if state.status == GameStatus::Paused
+                && !state.is_start_screen()
+                && theme_selection_mode == Some(ThemeSelectionMode::PauseMenu)
+            {
+                Some(ThemeSelectView {
+                    selected_idx: themes.current_index(),
+                    themes: themes.items(),
+                })
+            } else {
+                None
+            };
+
             renderer::render(
                 frame,
                 &state,
@@ -99,13 +150,21 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     high_score,
                     game_over_reference_high_score,
                     controller_enabled,
-                    theme: &THEMES[selected_theme_idx],
+                    theme: themes.current_theme(),
                     debug: cli.debug,
                     debug_line: if cli.debug {
                         format_debug_line(&state, last_input, last_input_tick)
                     } else {
                         String::new()
                     },
+                },
+                MenuUiState {
+                    start_selected_idx: start_menu_selected_idx,
+                    pause_selected_idx: pause_menu_selected_idx,
+                    game_over_selected_idx: game_over_menu_selected_idx,
+                    food_density: resolve_food_density(food_count_setting),
+                    start_theme_select,
+                    pause_theme_select,
                 },
             )
         })?;
@@ -118,13 +177,125 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 break;
             }
 
-            match game_input {
-                GameInput::CycleTheme if state.is_start_screen() => {
-                    selected_theme_idx = (selected_theme_idx + 1) % THEMES.len();
-                    if let Err(e) = save_theme_name(THEMES[selected_theme_idx].name) {
-                        eprintln!("Failed to save theme: {e}");
+            if state.is_start_screen() {
+                if theme_selection_mode == Some(ThemeSelectionMode::StartMenu) {
+                    match game_input {
+                        GameInput::Direction(Direction::Up) => {
+                            themes.select_previous();
+                            persist_selected_theme(&themes);
+                        }
+                        GameInput::Direction(Direction::Down) | GameInput::CycleTheme => {
+                            themes.select_next();
+                            persist_selected_theme(&themes);
+                        }
+                        GameInput::Confirm
+                        | GameInput::Direction(Direction::Right)
+                        | GameInput::Pause
+                        | GameInput::Direction(Direction::Left) => {
+                            theme_selection_mode = None;
+                        }
+                        _ => {}
                     }
+
+                    continue;
                 }
+
+                match game_input {
+                    GameInput::Direction(Direction::Up) => {
+                        start_menu_selected_idx = wrap_prev(start_menu_selected_idx, 4);
+                    }
+                    GameInput::Direction(Direction::Down) => {
+                        start_menu_selected_idx = wrap_next(start_menu_selected_idx, 4);
+                    }
+                    GameInput::Confirm | GameInput::Direction(Direction::Right) => {
+                        match start_menu_selected_idx {
+                            0 => state.status = GameStatus::Playing,
+                            1 => theme_selection_mode = Some(ThemeSelectionMode::StartMenu),
+                            2 => {
+                                food_count_setting =
+                                    next_food_count_setting(food_count_setting, bounds);
+                                state.set_food_density(resolve_food_density(food_count_setting));
+                            }
+                            3 => break,
+                            _ => {}
+                        }
+                    }
+                    GameInput::Pause => {}
+                    _ => {}
+                }
+
+                continue;
+            }
+
+            if state.status == GameStatus::Paused {
+                if theme_selection_mode == Some(ThemeSelectionMode::PauseMenu) {
+                    match game_input {
+                        GameInput::Direction(Direction::Up) => {
+                            themes.select_previous();
+                            persist_selected_theme(&themes);
+                        }
+                        GameInput::Direction(Direction::Down) | GameInput::CycleTheme => {
+                            themes.select_next();
+                            persist_selected_theme(&themes);
+                        }
+                        GameInput::Confirm
+                        | GameInput::Direction(Direction::Right)
+                        | GameInput::Pause
+                        | GameInput::Direction(Direction::Left) => {
+                            theme_selection_mode = None;
+                        }
+                        _ => {}
+                    }
+
+                    continue;
+                }
+
+                match game_input {
+                    GameInput::Direction(Direction::Up) | GameInput::Direction(Direction::Down) => {
+                        pause_menu_selected_idx = wrap_next(pause_menu_selected_idx, 4);
+                    }
+                    GameInput::Confirm | GameInput::Direction(Direction::Right) => {
+                        match pause_menu_selected_idx {
+                            0 => state.status = GameStatus::Playing,
+                            1 => theme_selection_mode = Some(ThemeSelectionMode::PauseMenu),
+                            2 => {
+                                food_count_setting =
+                                    next_food_count_setting(food_count_setting, bounds);
+                                state.set_food_density(resolve_food_density(food_count_setting));
+                            }
+                            3 => break,
+                            _ => {}
+                        }
+                    }
+                    GameInput::Pause | GameInput::Direction(Direction::Left) => {
+                        state.status = GameStatus::Playing
+                    }
+                    _ => {}
+                }
+
+                continue;
+            }
+
+            if matches!(state.status, GameStatus::GameOver | GameStatus::Victory) {
+                match game_input {
+                    GameInput::Direction(Direction::Up) | GameInput::Direction(Direction::Down) => {
+                        game_over_menu_selected_idx = wrap_next(game_over_menu_selected_idx, 2);
+                    }
+                    GameInput::Confirm | GameInput::Direction(Direction::Right) => {
+                        if game_over_menu_selected_idx == 0 {
+                            state = state.restart();
+                            state.status = GameStatus::Paused;
+                        } else {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+
+                continue;
+            }
+
+            match game_input {
                 GameInput::CycleTheme => {}
                 other => handle_input(&mut state, other),
             }
@@ -132,6 +303,9 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
 
         let tick_interval = tick_interval_for_speed(state.speed_level);
         if last_tick.elapsed() >= tick_interval {
+            if state.status == GameStatus::Playing {
+                state.record_tick_duration(tick_interval);
+            }
             state.tick();
             last_tick = Instant::now();
         }
@@ -139,6 +313,8 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         if state.status != last_status {
             if matches!(state.status, GameStatus::GameOver | GameStatus::Victory) {
                 game_over_reference_high_score = high_score;
+                game_over_menu_selected_idx = 0;
+                theme_selection_mode = None;
 
                 if state.score > high_score {
                     high_score = state.score;
@@ -148,6 +324,14 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 }
             }
 
+            if state.status == GameStatus::Paused && !state.is_start_screen() {
+                pause_menu_selected_idx = 0;
+            }
+
+            if state.status == GameStatus::Playing {
+                theme_selection_mode = None;
+            }
+
             last_status = state.status;
         }
 
@@ -155,6 +339,12 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn persist_selected_theme(catalog: &ThemeCatalog) {
+    if let Err(e) = save_theme_selection(catalog.current_id(), &catalog.current_theme().name) {
+        eprintln!("Failed to save theme: {e}");
+    }
 }
 
 fn handle_input(state: &mut GameState, input: GameInput) {
@@ -268,4 +458,58 @@ fn tick_interval_for_speed(speed_level: u32) -> Duration {
         .saturating_sub(speed_penalty_ms)
         .max(MIN_TICK_INTERVAL_MS);
     Duration::from_millis(clamped_ms)
+}
+
+fn resolve_food_density(setting: FoodCountSetting) -> FoodDensity {
+    match setting {
+        FoodCountSetting::Density(density) => density,
+    }
+}
+
+fn next_food_count_setting(current: FoodCountSetting, bounds: GridSize) -> FoodCountSetting {
+    let available_cells = bounds.total_cells().saturating_sub(1).max(1);
+    let options = food_density_options(available_cells);
+    let current_density = resolve_food_density(current);
+    let idx = options
+        .iter()
+        .position(|density| *density == current_density)
+        .unwrap_or(0);
+    let next_idx = (idx + 1) % options.len();
+    FoodCountSetting::Density(options[next_idx])
+}
+
+fn food_density_options(available_cells: usize) -> Vec<FoodDensity> {
+    let base = [
+        FoodDensity {
+            foods_per: 1,
+            cells_per: 200,
+        },
+        FoodDensity {
+            foods_per: 2,
+            cells_per: 400,
+        },
+        FoodDensity {
+            foods_per: 1,
+            cells_per: 100,
+        },
+        FoodDensity {
+            foods_per: 1,
+            cells_per: 50,
+        },
+    ];
+
+    base.into_iter()
+        .filter(|density| {
+            (available_cells.saturating_mul(density.foods_per) / density.cells_per).max(1)
+                <= available_cells
+        })
+        .collect()
+}
+
+fn wrap_next(current: usize, len: usize) -> usize {
+    (current + 1) % len
+}
+
+fn wrap_prev(current: usize, len: usize) -> usize {
+    if current == 0 { len - 1 } else { current - 1 }
 }

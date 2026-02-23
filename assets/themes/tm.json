@@ -1,0 +1,23 @@
+{
+  "defs": {
+    "bg":      "#333333",
+    "terminal": "#222222",
+    "panel":   "#444444",
+    "primary": "#39BAE6",
+    "accent":  "#FFB454",
+    "muted":   "#5C6773",
+    "error":   "#FF3333"
+  },
+  "theme": {
+    "snake_head": "primary",
+    "snake_body": "primary",
+    "snake_tail": "primary",
+    "food":        "accent",
+    "terminal_bg": "terminal",
+    "field_bg":    "bg",
+    "ui_bg":      "panel",
+    "ui_text":    "primary",
+    "ui_accent":  "accent",
+    "ui_muted":   "muted"
+  }
+}

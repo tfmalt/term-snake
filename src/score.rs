@@ -11,6 +11,8 @@ const SCORE_FILE_NAME: &str = "scores.json";
 struct ScoreFile {
     high_score: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    theme_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     theme_name: Option<String>,
 }
 
@@ -42,14 +44,29 @@ pub fn save_high_score(score: u32) -> io::Result<()> {
 
 /// Loads the saved theme name from disk, or `None` when not set.
 pub fn load_theme_name() -> io::Result<Option<String>> {
-    load_score_file_from_path(&scores_path()).map(|f| f.theme_name)
+    load_score_file_from_path(&scores_path()).map(|f| f.theme_name.or(f.theme_id))
 }
 
 /// Persists the selected theme name to disk, preserving the high score.
 pub fn save_theme_name(name: &str) -> io::Result<()> {
     let path = scores_path();
     let mut file = load_score_file_from_path(&path).unwrap_or_default();
+    file.theme_id = Some(name.to_owned());
     file.theme_name = Some(name.to_owned());
+    write_score_file_to_path(&path, &file)
+}
+
+/// Loads the saved theme id from disk, falling back to legacy `theme_name`.
+pub fn load_theme_selection() -> io::Result<Option<String>> {
+    load_score_file_from_path(&scores_path()).map(|f| f.theme_id.or(f.theme_name))
+}
+
+/// Persists the selected theme id and display name.
+pub fn save_theme_selection(theme_id: &str, display_name: &str) -> io::Result<()> {
+    let path = scores_path();
+    let mut file = load_score_file_from_path(&path).unwrap_or_default();
+    file.theme_id = Some(theme_id.to_owned());
+    file.theme_name = Some(display_name.to_owned());
     write_score_file_to_path(&path, &file)
 }
 
@@ -89,6 +106,7 @@ mod tests {
 
         let file = ScoreFile {
             high_score: 42,
+            theme_id: None,
             theme_name: None,
         };
         write_score_file_to_path(&path, &file).expect("score save should succeed");
@@ -129,6 +147,7 @@ mod tests {
 
         let file = ScoreFile {
             high_score: 10,
+            theme_id: None,
             theme_name: Some("Ocean".to_owned()),
         };
         write_score_file_to_path(&path, &file).expect("save should succeed");

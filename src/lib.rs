@@ -6,4 +6,5 @@ pub mod platform;
 pub mod renderer;
 pub mod score;
 pub mod snake;
+pub mod theme;
 pub mod ui;
