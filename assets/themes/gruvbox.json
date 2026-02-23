@@ -1,4 +1,5 @@
 {
+  "name": "Gruvbox",
   "defs": {
     "bg":      "#282828",
     "panel":   "#3C3836",

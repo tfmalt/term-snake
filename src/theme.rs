@@ -7,6 +7,10 @@ use serde::Deserialize;
 
 use crate::config::{Theme, fallback_theme};
 
+const USER_THEME_APP_DIR: &str = "terminal-snake";
+
+include!(concat!(env!("OUT_DIR"), "/builtin_themes.rs"));
+
 #[derive(Debug, Clone)]
 pub struct ThemeItem {
     pub id: String,
@@ -20,13 +24,15 @@ pub struct ThemeCatalog {
 }
 
 impl ThemeCatalog {
-    /// Loads bundled and user-provided themes with OpenCode-like precedence.
+    /// Loads embedded bundled themes, then overlays user-provided themes.
     #[must_use]
     pub fn load() -> Self {
         let mut order = Vec::<String>::new();
         let mut by_id = HashMap::<String, Theme>::new();
 
-        for path in theme_dirs() {
+        merge_embedded_themes(&mut order, &mut by_id);
+
+        if let Some(path) = user_theme_dir() {
             merge_theme_dir(&path, &mut order, &mut by_id);
         }
 
@@ -48,7 +54,7 @@ impl ThemeCatalog {
 
         let selected_idx = themes
             .iter()
-            .position(|theme| theme.id == "opencode")
+            .position(|theme| theme.id == "ember")
             .unwrap_or(0);
 
         Self {
@@ -132,6 +138,8 @@ impl ThemeCatalog {
 #[derive(Debug, Deserialize)]
 struct ThemeFile {
     #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
     defs: HashMap<String, ColorValue>,
     theme: HashMap<String, ColorValue>,
 }
@@ -167,6 +175,7 @@ fn merge_theme_dir(path: &Path, order: &mut Vec<String>, by_id: &mut HashMap<Str
         Err(_) => return,
     };
 
+    let mut theme_paths: Vec<PathBuf> = Vec::new();
     for entry_result in entries {
         let entry = match entry_result {
             Ok(entry) => entry,
@@ -174,10 +183,14 @@ fn merge_theme_dir(path: &Path, order: &mut Vec<String>, by_id: &mut HashMap<Str
         };
 
         let file_path = entry.path();
-        if !is_json_file(&file_path) {
-            continue;
+        if is_json_file(&file_path) {
+            theme_paths.push(file_path);
         }
+    }
 
+    theme_paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+    for file_path in theme_paths {
         let Some(id) = file_path
             .file_stem()
             .and_then(|name| name.to_str())
@@ -197,26 +210,58 @@ fn merge_theme_dir(path: &Path, order: &mut Vec<String>, by_id: &mut HashMap<Str
             }
         };
 
-        match parse_theme_from_str(&id, &content) {
-            Some(theme) => insert_theme(order, by_id, id, theme),
-            None => eprintln!(
-                "Warning: invalid theme file {}; using defaults",
-                file_path.display()
-            ),
+        match parse_theme_from_str_result(&id, &content) {
+            Ok(theme) => insert_theme(order, by_id, id, theme),
+            Err(error) => {
+                eprintln!(
+                    "Warning: invalid theme file {}; skipping: {error}",
+                    file_path.display()
+                );
+            }
         }
     }
 }
 
-fn parse_theme_from_str(id: &str, raw: &str) -> Option<Theme> {
-    let parsed = serde_json::from_str::<ThemeFile>(raw).ok()?;
+fn merge_embedded_themes(order: &mut Vec<String>, by_id: &mut HashMap<String, Theme>) {
+    for &(id, content) in BUILTIN_THEMES {
+        match parse_theme_from_str_result(id, content) {
+            Ok(theme) => insert_theme(order, by_id, id.to_owned(), theme),
+            Err(error) => {
+                eprintln!("Warning: invalid built-in theme '{id}'; skipping: {error}");
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ThemeParseError {
+    Json(serde_json::Error),
+}
+
+impl std::fmt::Display for ThemeParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Json(error) => write!(f, "json parse error: {error}"),
+        }
+    }
+}
+
+impl From<serde_json::Error> for ThemeParseError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
+}
+
+fn parse_theme_from_str_result(id: &str, raw: &str) -> Result<Theme, ThemeParseError> {
+    let parsed = serde_json::from_str::<ThemeFile>(raw)?;
     let fallback = fallback_theme();
     let mut stack = Vec::new();
     let ui_muted =
         resolve_token(&parsed, "ui_muted", true, &mut stack).unwrap_or(fallback.ui_muted);
     let ui_bright_default = brighten_30_percent(ui_muted);
 
-    Some(Theme {
-        name: display_name(id),
+    Ok(Theme {
+        name: parsed.name.clone().unwrap_or_else(|| display_name(id)),
         snake_head: resolve_token(&parsed, "snake_head", true, &mut stack)
             .unwrap_or(fallback.snake_head),
         snake_body: resolve_token(&parsed, "snake_body", true, &mut stack)
@@ -359,69 +404,20 @@ fn display_name(id: &str) -> String {
     output
 }
 
-/// Returns directories to search for theme JSON files, in priority order.
-///
-/// Directories are searched lowest-priority first so that later entries
-/// (user config) can override earlier ones (bundled assets).
-///
-/// Search order:
-/// 1. `<exe_dir>/assets/themes` — themes distributed alongside the binary
-/// 2. `<project_root>/assets/themes` — detected via `.git`, covers `cargo run`
-///    from any subdirectory
-/// 3. `<cwd>/assets/themes` — direct `cargo run` from the project root
-/// 4. `~/.config/snake/themes` — user-specific themes and overrides
-fn theme_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-
-    // 1. Next to the installed binary.
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(exe_dir) = exe.parent()
-    {
-        dirs.push(exe_dir.join("assets/themes"));
-    }
-
-    let cwd = std::env::current_dir().unwrap_or_default();
-
-    // 2. Project root (git-detected) — handles running from subdirectories.
-    if let Some(root) = find_project_root(&cwd) {
-        let p = root.join("assets/themes");
-        if !dirs.contains(&p) {
-            dirs.push(p);
-        }
-    }
-
-    // 3. CWD — handles `cargo run` from the project root directly.
-    let p = cwd.join("assets/themes");
-    if !dirs.contains(&p) {
-        dirs.push(p);
-    }
-
-    // 4. User config — highest priority, overrides everything above.
-    if let Some(config_dir) = dirs::config_dir() {
-        dirs.push(config_dir.join("snake/themes"));
-    }
-
-    dirs
-}
-
-fn find_project_root(start: &Path) -> Option<PathBuf> {
-    let mut current = Some(start);
-
-    while let Some(path) = current {
-        if path.join(".git").exists() {
-            return Some(path.to_path_buf());
-        }
-        current = path.parent();
-    }
-
-    None
+fn user_theme_dir() -> Option<PathBuf> {
+    dirs::config_dir().map(|config_dir| config_dir.join(USER_THEME_APP_DIR).join("themes"))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use ratatui::style::Color;
 
-    use super::{parse_hex_color, parse_theme_from_str};
+    use super::{merge_theme_dir, parse_hex_color, parse_theme_from_str_result};
 
     #[test]
     fn parses_hex_color() {
@@ -452,7 +448,7 @@ mod tests {
         }
         "##;
 
-        let theme = parse_theme_from_str("custom", json).expect("theme should parse");
+        let theme = parse_theme_from_str_result("custom", json).expect("theme should parse");
         assert_eq!(theme.field_bg, Color::Rgb(17, 17, 17));
         assert_eq!(theme.ui_bg, Color::Rgb(34, 34, 34));
         assert_eq!(theme.ui_accent, Color::Rgb(170, 0, 170));
@@ -477,7 +473,7 @@ mod tests {
         }
         "##;
 
-        let theme = parse_theme_from_str("system", json).expect("theme should parse");
+        let theme = parse_theme_from_str_result("system", json).expect("theme should parse");
         assert_eq!(theme.field_bg, Color::Reset);
         assert_eq!(theme.ui_bg, Color::Reset);
     }
@@ -501,7 +497,70 @@ mod tests {
         }
         "##;
 
-        let theme = parse_theme_from_str("custom", json).expect("theme should parse");
+        let theme = parse_theme_from_str_result("custom", json).expect("theme should parse");
         assert_eq!(theme.ui_bright, Color::Rgb(18, 52, 86));
+    }
+
+    #[test]
+    fn merge_theme_dir_sorts_by_filename() {
+        let dir = unique_test_dir("sorted");
+        fs::create_dir_all(&dir).expect("test directory should be creatable");
+
+        write_theme_file(&dir.join("z-last.json"), "#00AA00");
+        write_theme_file(&dir.join("a-first.json"), "#AA0000");
+
+        let mut order = Vec::new();
+        let mut by_id = HashMap::new();
+        merge_theme_dir(&dir, &mut order, &mut by_id);
+
+        assert_eq!(order, vec!["a-first", "z-last"]);
+        cleanup_test_dir(&dir);
+    }
+
+    #[test]
+    fn later_directory_overrides_same_theme_id() {
+        let low_dir = unique_test_dir("low");
+        let high_dir = unique_test_dir("high");
+        fs::create_dir_all(&low_dir).expect("low-priority dir should be creatable");
+        fs::create_dir_all(&high_dir).expect("high-priority dir should be creatable");
+
+        write_theme_file(&low_dir.join("dup.json"), "#112233");
+        write_theme_file(&high_dir.join("dup.json"), "#AABBCC");
+
+        let mut order = Vec::new();
+        let mut by_id = HashMap::new();
+        merge_theme_dir(&low_dir, &mut order, &mut by_id);
+        merge_theme_dir(&high_dir, &mut order, &mut by_id);
+
+        assert_eq!(order, vec!["dup"]);
+        let theme = by_id
+            .get("dup")
+            .expect("theme should be present after override");
+        assert_eq!(theme.snake_head, Color::Rgb(170, 187, 204));
+
+        cleanup_test_dir(&low_dir);
+        cleanup_test_dir(&high_dir);
+    }
+
+    fn write_theme_file(path: &PathBuf, color: &str) {
+        let raw = format!(
+            "{{\"theme\":{{\"snake_head\":\"{color}\",\"snake_body\":\"{color}\",\"snake_tail\":\"{color}\",\"food\":\"#FF0000\",\"terminal_bg\":\"#000000\",\"field_bg\":\"#000000\",\"ui_bg\":\"#111111\",\"ui_text\":\"#FFFFFF\",\"ui_accent\":\"{color}\",\"ui_muted\":\"#777777\"}}}}"
+        );
+        fs::write(path, raw).expect("theme file should be writable");
+    }
+
+    fn unique_test_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+
+        std::env::temp_dir()
+            .join("snake-theme-tests")
+            .join(format!("{label}-{nanos}"))
+    }
+
+    fn cleanup_test_dir(path: &PathBuf) {
+        let _ = fs::remove_dir_all(path);
     }
 }

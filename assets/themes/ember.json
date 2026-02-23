@@ -1,0 +1,28 @@
+{
+  "name": "Ember",
+  "defs": {
+    "terminal": "#080B15",
+    "field":    "#131B38",
+    "panel":    "#23244C",
+    "head":     "#FFC04A",
+    "body":     "#F08818",
+    "tail":     "#A86000",
+    "food_clr": "#FF4D6A",
+    "text":     "#B4C8F0",
+    "muted":    "#4F5070",
+    "bright":   "#4A6098"
+  },
+  "theme": {
+    "snake_head":  "head",
+    "snake_body":  "body",
+    "snake_tail":  "tail",
+    "food":        "food_clr",
+    "terminal_bg": "terminal",
+    "field_bg":    "field",
+    "ui_bg":       "panel",
+    "ui_text":     "text",
+    "ui_accent":   "body",
+    "ui_muted":    "muted",
+    "ui_bright":   "bright"
+  }
+}

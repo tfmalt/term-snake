@@ -1,6 +1,8 @@
 {
+  "name": "Opencode",
   "defs": {
     "bg":      "#0D1117",
+    "term":    "#0D1120",
     "panel":   "#161B22",
     "primary": "#58A6FF",
     "accent":  "#2EA043",
@@ -12,7 +14,7 @@
     "snake_body": "accent",
     "snake_tail": "accent",
     "food":        "error",
-    "terminal_bg": "bg",
+    "terminal_bg": "term",
     "field_bg":    "bg",
     "ui_bg":      "panel",
     "ui_text":    "primary",

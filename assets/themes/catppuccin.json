@@ -1,4 +1,5 @@
 {
+  "name": "Catppuccin",
   "defs": {
     "bg":      "#1E1E2E",
     "panel":   "#313244",
