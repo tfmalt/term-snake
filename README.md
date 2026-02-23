@@ -51,7 +51,13 @@ From the repository root:
 
 ```bash
 cargo build
-cargo run
+cargo run --bin terminal-snake
+```
+
+For production builds with the `tsnake` symlink:
+
+```bash
+./scripts/build-production.sh
 ```
 
 Useful quality checks:
@@ -83,6 +89,21 @@ Screenshot/GIF to be added after renderer and gameplay phases are complete.
 - Keep input backend details isolated in `input.rs`.
 - Centralize glyph constants in `config.rs`.
 - Prefer small, incremental changes with focused tests.
+
+## Themes
+
+- Built-in default themes are bundled using the OpenCode theme schema.
+- Menus support `[Up]/[Down]` navigation and `[Space]/[A]/[Enter]` select.
+- On a `Theme` menu item, press select to open the inline theme list.
+- In the inline theme list, `[Up]/[Down]` changes theme and `[Enter]/[Esc]` closes the list.
+- The selected theme is saved and restored between runs.
+
+Theme loading precedence (later overrides earlier):
+
+1. Bundled built-in themes
+2. `~/.config/opencode/themes/*.json` (or `$XDG_CONFIG_HOME/opencode/themes/*.json`)
+3. `<project-root>/.opencode/themes/*.json`
+4. `./.opencode/themes/*.json`
 
 ## License
 
