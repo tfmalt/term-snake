@@ -1,5 +1,5 @@
 use clap::Parser;
-use snake::block_font::{CHAR_SPACING, render_text_with_spacing};
+use terminal_snake::block_font::{CHAR_SPACING, render_text_with_spacing};
 
 #[derive(Debug, Parser)]
 #[command(name = "fontest", about = "Print block-font text to stdout")]
