@@ -159,4 +159,4 @@ Targets:
 
 ## License
 
-TBD.
+MIT License — Copyright (c) 2026 Thomas Malt. See [LICENSE](LICENSE) for details.

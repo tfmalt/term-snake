@@ -2,6 +2,7 @@
 name = "terminal-snake"
 version = "0.6.24"
 edition = "2024"
+license = "MIT"
 autobins = false
 
 [[bin]]
