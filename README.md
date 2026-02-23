@@ -1,66 +1,115 @@
-# term-snake
+# Terminal Snake
 
-A cross-platform, terminal-based Snake game in Rust.
+This is a retro terminal-based Snake game written in Rust. The goal of the project was to learn Rust, try out a ton of different code generating AI models using Opencode and Claude Code, while creating the ultimate terminal "making time pass while compiling / waiting for the AI-model to finish thinking" snake game.
 
-This project is currently in the planning/scaffolding stage. The architecture,
-module layout, and phased implementation plan are documented in:
-
-- `CLAUDE.md` (architecture + runtime design)
-- `PLAN.md` (incremental implementation phases)
-- `AGENTS.md` (agent workflow + coding standards)
-
-## Goals
-
-- Build a polished terminal Snake game for Linux, macOS, Windows, and WSL.
-- Support keyboard input and optional game controller input.
-- Use Unicode glyph rendering in terminal (no color emoji dependency).
-- Keep core game logic deterministic and thoroughly unit-tested.
-- Use this codebase as a Rust learning project while shipping a real app.
-
-## Planned Tech Stack
-
-- `ratatui` for terminal UI rendering
-- `crossterm` for terminal input/raw mode
-- `gilrs` for game controller support
-- `clap` for CLI argument parsing
-- `serde` + `serde_json` for high score persistence
-- `thiserror` for error types
-
-## Planned Module Layout
-
-```text
-src/
-  main.rs
-  game.rs
-  snake.rs
-  food.rs
-  input.rs
-  renderer.rs
-  config.rs
-  score.rs
-  platform.rs
-  ui/
-    mod.rs
-    menu.rs
-    hud.rs
+```
+                      ▀
+▀▀█▀▀ █▀▀█ ▄▀▀▀ █▀▄▀▄ █ █▀▀▄ ▀▀▀█ █       █▀▀▀ █▀▀▄ ▀▀▀█ █  █ █▀▀█
+  █   █▀▀▀ █    █ █ █ █ █  █ █▀▀█ █       ▀▀▀█ █  █ █▀▀█ █▀▀▄ █▀▀▀
+  ▀   ▀▀▀▀ ▀    ▀ ▀ ▀ ▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀    ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀
 ```
 
-## Getting Started (Once Scaffold Exists)
+## Features
 
-From the repository root:
+- **Half-block rendering** — every game cell is two Unicode half-block
+  characters composited together, giving a smooth, colorful appearance without
+  color-emoji dependency.
+- **Game controller support** — D-pad and analog stick via `gilrs` (disabled
+  automatically on WSL).
+- **12 built-in themes** — Ayu, Catppuccin, Ember, Everforest, Gruvbox,
+  Matrix, Nord, One Dark, OpenCode, System, tm, and Tokyo Night. 
+- **User themes** — drop JSON files into
+  `~/.config/terminal-snake/themes/` (or `$XDG_CONFIG_HOME/terminal-snake/themes/`)
+  to add or override themes at runtime.
+- **In-game theme picker** — browse themes from the start menu or pause menu;
+  selection is saved and restored between runs.
+- **Terminal resize handling** — the game grid resizes live as the terminal
+  window changes size. Resize the terminal mid game and continue playing.
+
+
+## Controls
+
+| Action          | Keyboard                        | Controller         |
+|-----------------|---------------------------------|--------------------|
+| Move            | Arrow keys or W A S D           | D-pad / left stick |
+| Pause / resume  | P or Esc                        | Start              |
+| Confirm / select| Enter or Space                  | A                  |
+| Quit            | Q or Ctrl-C                     | —                  |
+| Cycle theme     | T (during gameplay)             | —                  |
+
+In menus, `Up`/`Down` navigate items and `Enter`/`Space`/`→` confirms.
+Press `Esc`/`←`/`Enter` to close the inline theme picker.
+
+## Requirements
+
+- A terminal emulator with 256-color or truecolor support.
+- A font that renders Unicode block elements correctly (e.g. any Nerd Font,
+  or any modern monospace font — no special glyphs beyond `▀`, `▄`, `█`).
+
+## Building
 
 ```bash
-cargo build
-cargo run --bin terminal-snake
+cargo build --release
 ```
 
-For production builds with the `tsnake` symlink:
+The binary is placed at `target/release/terminal-snake`.
+
+## Running
 
 ```bash
-./scripts/build-production.sh
+cargo run --release
+# or after building:
+./target/release/terminal-snake
 ```
 
-Useful quality checks:
+CLI options:
+
+```
+Options:
+      --speed <SPEED>    Starting speed level [default: 1]
+      --width <WIDTH>    Grid width in logical cells (defaults to terminal width)
+      --height <HEIGHT>  Grid height in logical cells (defaults to terminal height)
+      --no-controller    Disable controller input even when available
+      --debug            Show diagnostic debug line at the bottom of the screen
+  -h, --help             Print help
+```
+
+## Themes
+
+Built-in themes are embedded at compile time from `assets/themes/*.json`.
+User themes are loaded from:
+
+```
+~/.config/terminal-snake/themes/*.json          # Linux / WSL / macOS
+$XDG_CONFIG_HOME/terminal-snake/themes/*.json   # if XDG_CONFIG_HOME is set
+```
+
+User themes overlay built-in ones — a file with the same base name overrides
+the built-in theme of that name.
+
+A theme JSON file looks like:
+
+```json
+{
+  "name": "My Theme",
+  "snake_head": "#e06c75",
+  "snake_body": "#98c379",
+  "snake_tail": "#61afef",
+  "food": "#e5c07b",
+  "terminal_bg": "reset",
+  "field_bg": "#282c34",
+  "ui_bg": "#21252b",
+  "ui_text": "#abb2bf",
+  "ui_accent": "#e06c75",
+  "ui_muted": "#5c6370",
+  "ui_bright": "#ffffff"
+}
+```
+
+Colors can be hex strings (`"#rrggbb"`), named ANSI colors (`"red"`,
+`"green"`, etc.), or `"reset"` to use the terminal's default.
+
+## Development
 
 ```bash
 cargo fmt --check
@@ -74,34 +123,39 @@ Run a single test by name:
 cargo test direction_buffer_rejects_reverse -- --exact
 ```
 
-## Install (Placeholder)
+### Module layout
 
-Installation instructions will be added once the first playable release is
-available.
+```
+src/
+  main.rs          Entry point, CLI parsing, top-level game loop
+  game.rs          Game state, tick logic, collision detection
+  snake.rs         Snake data structure and movement
+  food.rs          Food spawning logic
+  input.rs         Unified input handler (keyboard + controller)
+  renderer.rs      Ratatui rendering: grid, HUD, menus
+  theme.rs         Theme catalog, JSON loading, user-theme merging
+  block_font.rs    Block-art typeface for the title screen
+  config.rs        Constants, GridSize, Theme struct, fallback theme
+  score.rs         High score and theme-selection persistence
+  platform.rs      WSL detection
+  ui/
+    mod.rs
+    menu.rs        Start, pause, and game-over screen widgets
+    hud.rs         Score, speed level, controller-status HUD
+  bin/
+    fontest.rs     Font/glyph preview utility
+```
 
-## Screenshot (Placeholder)
+## Distribution
 
-Screenshot/GIF to be added after renderer and gameplay phases are complete.
+Binaries are published via GitHub Actions on version tags (`v*`).
+Targets:
 
-## Development Notes
-
-- Keep rendering and gameplay logic separate (`renderer` reads state only).
-- Keep input backend details isolated in `input.rs`.
-- Centralize glyph constants in `config.rs`.
-- Prefer small, incremental changes with focused tests.
-
-## Themes
-
-- Built-in default themes are bundled using the OpenCode theme schema.
-- Menus support `[Up]/[Down]` navigation and `[Space]/[A]/[Enter]` select.
-- On a `Theme` menu item, press select to open the inline theme list.
-- In the inline theme list, `[Up]/[Down]` changes theme and `[Enter]/[Esc]` closes the list.
-- The selected theme is saved and restored between runs.
-
-Theme loading precedence (later overrides earlier):
-
-1. Embedded built-in themes (compiled from `assets/themes/*.json`)
-2. `~/.config/terminal-snake/themes/*.json` (or `$XDG_CONFIG_HOME/terminal-snake/themes/*.json`)
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+- `x86_64-pc-windows-msvc`
 
 ## License
 
