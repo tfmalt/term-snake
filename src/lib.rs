@@ -1,3 +1,4 @@
+pub mod block_font;
 pub mod config;
 pub mod food;
 pub mod game;

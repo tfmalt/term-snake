@@ -1,11 +1,12 @@
-use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
+use ratatui::Frame;
 use std::time::Duration;
 
-use crate::config::{GLYPH_HALF_LOWER, GLYPH_HALF_UPPER, Theme};
+use crate::block_font::{render_text, FONT_HEIGHT};
+use crate::config::{Theme, GLYPH_HALF_LOWER, GLYPH_HALF_UPPER};
 use crate::game::{DeathReason, FoodDensity};
 use crate::theme::ThemeItem;
 
@@ -24,27 +25,38 @@ pub fn render_start_menu(
     food_density: FoodDensity,
     theme_select: Option<ThemeSelectView<'_>>,
 ) {
-    let popup = centered_popup(area, 70, 45);
+    let popup = centered_popup(area, 76, 58);
     frame.render_widget(Clear, popup);
     render_menu_panel(frame, popup, theme);
 
-    let [_, title_row, body_row, footer_row] = Layout::vertical([
+    let [_, title_row, body_row, footer_row, _] = Layout::vertical([
         Constraint::Length(1),
-        Constraint::Length(3),
-        Constraint::Min(3),
+        Constraint::Length(5),
+        Constraint::Min(5),
         Constraint::Length(2),
+        Constraint::Length(1),
     ])
     .areas(popup);
 
+    let [title_font_row, title_version_row] = Layout::vertical([
+        Constraint::Length(FONT_HEIGHT as u16),
+        Constraint::Length(1),
+    ])
+    .areas(title_row);
+
+    let title_lines = start_screen_title_lines(theme);
     frame.render_widget(
-        Paragraph::new(Line::from("TERMINAL SNAKE"))
+        Paragraph::new(title_lines)
             .alignment(Alignment::Center)
-            .style(
-                Style::default()
-                    .fg(theme.ui_accent)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        title_row,
+            .style(Style::default().bg(theme.ui_bg)),
+        title_font_row,
+    );
+
+    frame.render_widget(
+        Paragraph::new(Line::from(format!("v{}  ", env!("CARGO_PKG_VERSION"))))
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(theme.ui_bright).bg(theme.ui_bg)),
+        title_version_row,
     );
 
     let body = vec![
@@ -57,11 +69,17 @@ pub fn render_start_menu(
         ),
         menu_option_line("Quit", selected_idx == 3, theme),
     ];
+
+    let menu_width = start_menu_content_width(theme, food_density).saturating_add(2);
+    let menu_area = centered_rect_with_max_width(
+        centered_rect_with_max_height(body_row, body.len() as u16),
+        menu_width,
+    );
     frame.render_widget(
         Paragraph::new(body)
             .alignment(Alignment::Left)
             .style(menu_body_style(theme)),
-        body_row,
+        menu_area,
     );
 
     frame.render_widget(
@@ -390,6 +408,81 @@ fn menu_option_line<T: Into<String>>(label: T, selected: bool, theme: &Theme) ->
         )
     } else {
         Line::from(line)
+    }
+}
+
+fn start_screen_title_lines(theme: &Theme) -> Vec<Line<'static>> {
+    let terminal_rows = render_text("terminal");
+    let snake_rows = render_text("snake");
+
+    terminal_rows
+        .into_iter()
+        .zip(snake_rows)
+        .map(|(terminal_row, snake_row)| {
+            Line::from(vec![
+                Span::styled(
+                    terminal_row,
+                    Style::default()
+                        .fg(theme.ui_accent)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("   "),
+                Span::styled(
+                    snake_row,
+                    Style::default()
+                        .fg(theme.ui_text)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ])
+        })
+        .collect()
+}
+
+fn start_menu_content_width(theme: &Theme, food_density: FoodDensity) -> u16 {
+    let labels = [
+        "Start".to_string(),
+        format!("Theme:  {}", theme.name),
+        format_food_menu_label(food_density),
+        "Quit".to_string(),
+    ];
+
+    let widest = labels
+        .iter()
+        .map(|label| label.chars().count())
+        .max()
+        .unwrap_or(0)
+        .saturating_add(2);
+
+    widest.min(u16::MAX as usize) as u16
+}
+
+fn centered_rect_with_max_width(area: Rect, max_width: u16) -> Rect {
+    if area.width <= max_width {
+        return area;
+    }
+
+    let width = max_width.max(1);
+    let x = area.x + (area.width - width) / 2;
+    Rect {
+        x,
+        y: area.y,
+        width,
+        height: area.height,
+    }
+}
+
+fn centered_rect_with_max_height(area: Rect, max_height: u16) -> Rect {
+    if area.height <= max_height {
+        return area;
+    }
+
+    let height = max_height.max(1);
+    let y = area.y + (area.height - height) / 2;
+    Rect {
+        x: area.x,
+        y,
+        width: area.width,
+        height,
     }
 }
 
