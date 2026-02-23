@@ -17,6 +17,7 @@
     "ui_bg":      "panel",
     "ui_text":    "primary",
     "ui_accent":  "accent",
-    "ui_muted":   "muted"
+    "ui_muted":   "muted",
+    "ui_bright":  "#788192"
   }
 }

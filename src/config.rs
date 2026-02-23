@@ -25,8 +25,8 @@ impl GridSize {
 /// The `snake_head`, `snake_body`, `snake_tail`, and `food` fields each
 /// specify the solid block color for that entity.
 ///
-/// UI fields (`ui_bg`, `ui_text`, `ui_accent`, `ui_muted`) style the HUD
-/// and menu panels. JSON theme keys match these field names 1:1.
+/// UI fields (`ui_bg`, `ui_text`, `ui_accent`, `ui_muted`, `ui_bright`) style
+/// the HUD and menu panels. JSON theme keys match these field names 1:1.
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub name: String,
@@ -51,6 +51,8 @@ pub struct Theme {
     pub ui_accent: Color,
     /// Subdued color for footer hints and secondary labels.
     pub ui_muted: Color,
+    /// Brighter UI accent for standout secondary text and highlights.
+    pub ui_bright: Color,
 }
 
 /// Emergency fallback theme used when no external/bundled themes load.
@@ -68,6 +70,7 @@ pub fn fallback_theme() -> Theme {
         ui_text: Color::White,
         ui_accent: Color::Green,
         ui_muted: Color::DarkGray,
+        ui_bright: Color::Gray,
     }
 }
 

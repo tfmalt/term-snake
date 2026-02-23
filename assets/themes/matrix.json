@@ -9,6 +9,7 @@
     "ui_bg":      "#000000",
     "ui_text":    "#00FF00",
     "ui_accent":  "#55FF55",
-    "ui_muted":   "#337733"
+    "ui_muted":   "#337733",
+    "ui_bright":  "#429B42"
   }
 }

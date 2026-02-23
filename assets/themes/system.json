@@ -9,6 +9,7 @@
     "ui_bg":      "none",
     "ui_text":    6,
     "ui_accent":  2,
-    "ui_muted":   8
+    "ui_muted":   8,
+    "ui_bright":  7
   }
 }

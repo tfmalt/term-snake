@@ -7,7 +7,6 @@ use serde::Deserialize;
 
 use crate::config::{Theme, fallback_theme};
 
-
 #[derive(Debug, Clone)]
 pub struct ThemeItem {
     pub id: String,
@@ -212,6 +211,9 @@ fn parse_theme_from_str(id: &str, raw: &str) -> Option<Theme> {
     let parsed = serde_json::from_str::<ThemeFile>(raw).ok()?;
     let fallback = fallback_theme();
     let mut stack = Vec::new();
+    let ui_muted =
+        resolve_token(&parsed, "ui_muted", true, &mut stack).unwrap_or(fallback.ui_muted);
+    let ui_bright_default = brighten_30_percent(ui_muted);
 
     Some(Theme {
         name: display_name(id),
@@ -224,15 +226,36 @@ fn parse_theme_from_str(id: &str, raw: &str) -> Option<Theme> {
         food: resolve_token(&parsed, "food", true, &mut stack).unwrap_or(fallback.food),
         terminal_bg: resolve_token(&parsed, "terminal_bg", true, &mut stack)
             .unwrap_or(fallback.terminal_bg),
-        field_bg: resolve_token(&parsed, "field_bg", true, &mut stack)
-            .unwrap_or(fallback.field_bg),
+        field_bg: resolve_token(&parsed, "field_bg", true, &mut stack).unwrap_or(fallback.field_bg),
         ui_bg: resolve_token(&parsed, "ui_bg", true, &mut stack).unwrap_or(fallback.ui_bg),
         ui_text: resolve_token(&parsed, "ui_text", true, &mut stack).unwrap_or(fallback.ui_text),
         ui_accent: resolve_token(&parsed, "ui_accent", true, &mut stack)
             .unwrap_or(fallback.ui_accent),
-        ui_muted: resolve_token(&parsed, "ui_muted", true, &mut stack)
-            .unwrap_or(fallback.ui_muted),
+        ui_muted,
+        ui_bright: resolve_token(&parsed, "ui_bright", true, &mut stack)
+            .unwrap_or(ui_bright_default),
     })
+}
+
+fn brighten_30_percent(color: Color) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => Color::Rgb(
+            brighten_channel_30_percent(r),
+            brighten_channel_30_percent(g),
+            brighten_channel_30_percent(b),
+        ),
+        Color::Black => Color::DarkGray,
+        Color::DarkGray => Color::Gray,
+        Color::Gray => Color::White,
+        Color::White => Color::White,
+        other => other,
+    }
+}
+
+fn brighten_channel_30_percent(channel: u8) -> u8 {
+    let remaining = 255u16.saturating_sub(u16::from(channel));
+    let increase = (remaining * 30 + 50) / 100;
+    (u16::from(channel) + increase).min(255) as u8
 }
 
 fn resolve_token(
@@ -433,6 +456,7 @@ mod tests {
         assert_eq!(theme.field_bg, Color::Rgb(17, 17, 17));
         assert_eq!(theme.ui_bg, Color::Rgb(34, 34, 34));
         assert_eq!(theme.ui_accent, Color::Rgb(170, 0, 170));
+        assert_eq!(theme.ui_bright, Color::Rgb(172, 172, 172));
     }
 
     #[test]
@@ -456,5 +480,28 @@ mod tests {
         let theme = parse_theme_from_str("system", json).expect("theme should parse");
         assert_eq!(theme.field_bg, Color::Reset);
         assert_eq!(theme.ui_bg, Color::Reset);
+    }
+
+    #[test]
+    fn explicit_ui_bright_overrides_default() {
+        let json = r##"
+        {
+          "theme": {
+            "snake_head":  "#00CC00",
+            "snake_body":  "#00CC00",
+            "snake_tail":  "#00CC00",
+            "food":        "#FF0000",
+            "field_bg":    "#000000",
+            "ui_bg":       "#111111",
+            "ui_text":     "#00FF00",
+            "ui_accent":   "#00CC00",
+            "ui_muted":    "#202020",
+            "ui_bright":   "#123456"
+          }
+        }
+        "##;
+
+        let theme = parse_theme_from_str("custom", json).expect("theme should parse");
+        assert_eq!(theme.ui_bright, Color::Rgb(18, 52, 86));
     }
 }

@@ -18,6 +18,7 @@
     "ui_bg":      "nord1",
     "ui_text":    { "dark": "nord8", "light": "nord10" },
     "ui_accent":  "nord7",
-    "ui_muted":   "nord3"
+    "ui_muted":   "nord3",
+    "ui_bright":  "#63708A"
   }
 }
