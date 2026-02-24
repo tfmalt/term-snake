@@ -46,7 +46,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install cross
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        if: startsWith(matrix.target, 'aarch64-unknown-linux-gnu') || startsWith(matrix.target, 'x86_64-unknown-linux-gnu')
         uses: taiki-e/install-action@v2
         with:
           tool: cross
@@ -57,7 +57,7 @@ jobs:
       - name: Build release binary
         shell: bash
         run: |
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+          if [[ "${{ matrix.target }}" == *"unknown-linux-gnu"* ]]; then
             cross build --release --target "${{ matrix.target }}"
           else
             cargo build --release --target "${{ matrix.target }}"

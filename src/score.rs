@@ -192,6 +192,7 @@ mod tests {
         cleanup_test_dir(&root);
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn legacy_score_file_is_loaded_when_new_path_missing() {
         let root = unique_test_root("legacy_fallback");
