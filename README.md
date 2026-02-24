@@ -31,24 +31,45 @@ At the same time create the terminal "making time pass while compiling -> waitin
   window changes size. Resize the terminal mid game and continue playing.
 
 
-## Controls
-
-| Action          | Keyboard                        | Controller         |
-|-----------------|---------------------------------|--------------------|
-| Move            | Arrow keys or W A S D           | D-pad / left stick |
-| Pause / resume  | P or Esc                        | Start              |
-| Confirm / select| Enter or Space                  | A                  |
-| Quit            | Q or Ctrl-C                     | —                  |
-| Cycle theme     | T (during gameplay)             | —                  |
-
-In menus, `Up`/`Down` navigate items and `Enter`/`Space`/`→` confirms.
-Press `Esc`/`←`/`Enter` to close the inline theme picker.
-
 ## Requirements
 
 - A terminal emulator with 256-color or truecolor support.
 - A font that renders Unicode block elements correctly (e.g. any Nerd Font,
   or any modern monospace font — no special glyphs beyond `▀`, `▄`, `█`).
+
+## Install
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install tfmalt/tap/terminal-snake
+# or:
+# brew tap tfmalt/tap
+# brew install terminal-snake
+```
+
+### Prebuilt binaries (Linux/macOS/Windows)
+
+Download the archive for your platform from GitHub Releases:
+
+- https://github.com/tfmalt/terminal-snake/releases
+
+Then extract and run `terminal-snake` (or `terminal-snake.exe` on Windows).
+Each release includes `SHA256SUMS` for integrity verification.
+
+### Rust/Cargo (build from source)
+
+```bash
+cargo install --git https://github.com/tfmalt/terminal-snake terminal-snake
+```
+
+## Building
+
+```bash
+cargo build --release
+```
+
+The binary is placed at `target/release/terminal-snake`.
 
 ### Windows support
 
@@ -60,14 +81,6 @@ Press `Esc`/`←`/`Enter` to close the inline theme picker.
   `TERMINAL_SNAKE_GLYPHS=ascii`.
 - Known limitation: ASCII fallback keeps gameplay functional but loses the
   half-block visual fidelity (coarser cell rendering).
-
-## Building
-
-```bash
-cargo build --release
-```
-
-The binary is placed at `target/release/terminal-snake`.
 
 ## Running
 
@@ -89,6 +102,19 @@ Options:
       --ascii-glyphs     Use an ASCII-safe glyph palette for poor font environments
   -h, --help             Print help
 ```
+
+## Controls
+
+| Action          | Keyboard                        | Controller         |
+|-----------------|---------------------------------|--------------------|
+| Move            | Arrow keys or W A S D           | D-pad / left stick |
+| Pause / resume  | P or Esc                        | Start              |
+| Confirm / select| Enter or Space                  | A                  |
+| Quit            | Q or Ctrl-C                     | —                  |
+| Cycle theme     | T (during gameplay)             | —                  |
+
+In menus, `Up`/`Down` navigate items and `Enter`/`Space`/`→` confirms.
+Press `Esc`/`←`/`Enter` to close the inline theme picker.
 
 ## Windows smoke-test checklist
 
@@ -189,12 +215,15 @@ Targets:
 Each release also includes a `SHA256SUMS` file with checksums for every
 published archive (`*.tar.gz`, `*.zip`).
 
-### Package manager metadata (prep)
+### Package manager metadata
 
 Canonical package IDs used for package-manager publishing:
 
 - Homebrew formula: `terminal-snake`
 - winget package ID: `ThomasMalt.TerminalSnake`
+
+Homebrew tap source lives at `tfmalt/homebrew-tap`.
+Homebrew users install via tap alias `tfmalt/tap`.
 
 ## License
 
