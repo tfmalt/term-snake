@@ -2,8 +2,17 @@
 name = "terminal-snake"
 version = "0.6.24"
 edition = "2024"
+description = "Retro cross-platform terminal Snake game in Rust"
 license = "MIT"
+homepage = "https://github.com/tfmalt/terminal-snake"
+repository = "https://github.com/tfmalt/terminal-snake"
+keywords = ["snake", "terminal", "game", "ratatui", "rust"]
+categories = ["games", "command-line-interface"]
 autobins = false
+
+[features]
+default = []
+fontest = []
 
 [[bin]]
 name = "terminal-snake"
@@ -12,6 +21,7 @@ path = "src/main.rs"
 [[bin]]
 name = "fontest"
 path = "src/bin/fontest.rs"
+required-features = ["fontest"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

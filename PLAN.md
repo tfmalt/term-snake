@@ -4,36 +4,36 @@ Active roadmap after completing phases 1-8.
 
 ---
 
-## Phase 9: Native Windows Terminal Support [ ]
+## Phase 9: Native Windows Terminal Support [x]
 
 Make native Windows (`x86_64-pc-windows-msvc`) a first-class runtime target for
 PowerShell + Windows Terminal.
 
-- [ ] Add robust terminal lifecycle guard in `main.rs` so cleanup always runs
+- [x] Add robust terminal lifecycle guard in `main.rs` so cleanup always runs
   on normal exit, early `Err` returns, and panic
-- [ ] Verify alternate screen/raw mode/cursor restoration on all exit paths in
+- [x] Verify alternate screen/raw mode/cursor restoration on all exit paths in
   PowerShell (including Ctrl+C and startup failures)
-- [ ] Add resize-event handling policy for Windows Terminal
-- [ ] Validate glyph rendering in Windows Terminal (Cascadia Mono/Code): `▀`,
+- [x] Add resize-event handling policy for Windows Terminal
+- [x] Validate glyph rendering in Windows Terminal (Cascadia Mono/Code): `▀`,
   `▄`, `█`, directional/menu glyphs
-- [ ] Add fallback strategy for poor glyph environments and document behavior
-- [ ] Confirm color and style behavior in PowerShell + Windows Terminal
-- [ ] Validate persistence paths on Windows: score/theme file creation, parent
+- [x] Add fallback strategy for poor glyph environments and document behavior
+- [x] Confirm color and style behavior in PowerShell + Windows Terminal
+- [x] Validate persistence paths on Windows: score/theme file creation, parent
   directory creation, malformed/missing-file recovery
-- [ ] Update docs to explicitly state Windows support scope, expected fonts,
+- [x] Update docs to explicitly state Windows support scope, expected fonts,
   known limitations, and persistence path (`LOCALAPPDATA`)
-- [ ] Add manual Windows smoke-test checklist to docs
+- [x] Add manual Windows smoke-test checklist to docs
 
 ---
 
 ## Phase 10: CI and Release Pipeline [ ]
 
-- [ ] Write `.github/workflows/ci.yml`:
+- [x] Write `.github/workflows/ci.yml`:
   - Trigger on push and pull_request
   - Matrix: `ubuntu-latest`, `macos-latest`, `windows-latest`
   - Steps: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
     `cargo build --release`
-- [ ] Write `.github/workflows/release.yml`:
+- [x] Write `.github/workflows/release.yml`:
   - Trigger on tag push `v*`
   - Cross-compile using `cross` or GitHub-hosted runners:
     - `x86_64-unknown-linux-gnu`
@@ -43,7 +43,7 @@ PowerShell + Windows Terminal.
     - `x86_64-pc-windows-msvc`
   - Package each binary as a `.tar.gz` (Linux/macOS) or `.zip` (Windows)
   - Create GitHub Release with binaries attached and auto-generated changelog
-- [ ] Add `Cargo.toml` metadata: `description`, `license`, `homepage`,
+- [x] Add `Cargo.toml` metadata: `description`, `license`, `homepage`,
   `repository`, `keywords`, `categories`
 - [ ] Tag `v0.1.0` and verify the release pipeline produces downloadable
   binaries

@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY_NAME: terminal-snake
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive_suffix: tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            archive_suffix: tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive_suffix: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive_suffix: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_suffix: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cross build --release --target "${{ matrix.target }}"
+          else
+            cargo build --release --target "${{ matrix.target }}"
+          fi
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          package_dir="${BINARY_NAME}-${version}-${{ matrix.target }}"
+          mkdir -p "$package_dir"
+          cp "target/${{ matrix.target }}/release/${BINARY_NAME}" "$package_dir/"
+          cp README.md LICENSE "$package_dir/"
+          tar -czf "${package_dir}.tar.gz" "$package_dir"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${env:GITHUB_REF_NAME}"
+          $packageDir = "${env:BINARY_NAME}-$version-${{ matrix.target }}"
+          New-Item -Path $packageDir -ItemType Directory -Force | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${env:BINARY_NAME}.exe" "$packageDir/"
+          Copy-Item README.md "$packageDir/"
+          Copy-Item LICENSE "$packageDir/"
+          Compress-Archive -Path "$packageDir/*" -DestinationPath "$packageDir.zip" -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            *.tar.gz
+            *.zip
+
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
