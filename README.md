@@ -186,6 +186,16 @@ Targets:
 - `aarch64-apple-darwin`
 - `x86_64-pc-windows-msvc`
 
+Each release also includes a `SHA256SUMS` file with checksums for every
+published archive (`*.tar.gz`, `*.zip`).
+
+### Package manager metadata (prep)
+
+Canonical package IDs used for package-manager publishing:
+
+- Homebrew formula: `terminal-snake`
+- winget package ID: `ThomasMalt.TerminalSnake`
+
 ## License
 
 MIT License — Copyright (c) 2026 Thomas Malt. See [LICENSE](LICENSE) for details.

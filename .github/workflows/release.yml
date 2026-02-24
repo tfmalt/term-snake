@@ -108,6 +108,13 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
