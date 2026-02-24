@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::config::{GLYPH_HALF_UPPER, HUD_BOTTOM_MARGIN_Y, PLAY_AREA_MARGIN_X, Theme};
+use crate::config::{HUD_BOTTOM_MARGIN_Y, PLAY_AREA_MARGIN_X, Theme, glyphs};
 use crate::game::{GameState, GameStatus};
 use crate::platform::Platform;
 
@@ -171,11 +171,12 @@ fn inset_horizontal(area: Rect, margin: u16) -> Rect {
 fn render_hud_bottom_margin(frame: &mut Frame<'_>, bottom_margin: Rect, theme: &Theme) {
     let margin_band = inset_horizontal(bottom_margin, PLAY_AREA_MARGIN_X);
     let style = Style::default().fg(theme.field_bg).bg(theme.terminal_bg);
+    let half_upper = glyphs().half_upper;
     let buffer = frame.buffer_mut();
 
     for y in margin_band.y..margin_band.bottom() {
         for x in margin_band.x..margin_band.right() {
-            buffer.set_string(x, y, GLYPH_HALF_UPPER, style);
+            buffer.set_string(x, y, half_upper, style);
         }
     }
 }
@@ -211,7 +212,7 @@ fn left_style(theme: &Theme) -> Style {
 fn bottom_info_line<'a>(dimensions: &'a str, food_count: &'a str, food_color: Color) -> Line<'a> {
     Line::from(vec![
         Span::raw(format!("{dimensions}  ")),
-        Span::styled("█", Style::default().fg(food_color)),
+        Span::styled(glyphs().solid, Style::default().fg(food_color)),
         Span::raw(format!(" = {food_count}")),
     ])
 }

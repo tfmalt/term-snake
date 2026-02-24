@@ -6,7 +6,7 @@ use ratatui::widgets::{Clear, Paragraph};
 use std::time::Duration;
 
 use crate::block_font::{FONT_HEIGHT, render_text, text_width};
-use crate::config::{GLYPH_HALF_LOWER, GLYPH_HALF_UPPER, Theme};
+use crate::config::{Theme, glyphs};
 use crate::game::DeathReason;
 use crate::theme::ThemeItem;
 
@@ -704,12 +704,13 @@ fn table_header_row(
     value_col_width: usize,
     theme: &Theme,
 ) -> Line<'static> {
+    let separator = glyphs().table_separator;
     let style = Style::default()
         .fg(theme.ui_text)
         .add_modifier(Modifier::REVERSED);
     Line::from(vec![
         Span::styled(format!(" {label:<14} "), style),
-        Span::styled("│", style),
+        Span::styled(separator, style),
         Span::styled(format!(" {value:<value_col_width$} "), style),
     ])
 }
@@ -720,12 +721,13 @@ fn table_row(
     value_col_width: usize,
     theme: &Theme,
 ) -> Line<'static> {
+    let separator = glyphs().table_separator;
     Line::from(vec![
         Span::styled(
             format!(" {label:<14} "),
             Style::default().fg(theme.ui_bright),
         ),
-        Span::styled("│", Style::default().fg(theme.ui_text)),
+        Span::styled(separator, Style::default().fg(theme.ui_text)),
         Span::styled(
             format!(" {:<value_col_width$} ", value.as_ref()),
             Style::default().fg(theme.ui_text),
@@ -753,11 +755,12 @@ fn render_menu_panel(frame: &mut Frame<'_>, area: Rect, theme: &Theme) {
     let top_y = area.y;
     let bottom_y = area.bottom().saturating_sub(1);
     let margin_style = Style::default().fg(theme.ui_bg).bg(theme.field_bg);
+    let palette = glyphs();
     let buffer = frame.buffer_mut();
 
     for x in area.x..area.right() {
-        buffer.set_string(x, top_y, GLYPH_HALF_LOWER, margin_style);
-        buffer.set_string(x, bottom_y, GLYPH_HALF_UPPER, margin_style);
+        buffer.set_string(x, top_y, palette.half_lower, margin_style);
+        buffer.set_string(x, bottom_y, palette.half_upper, margin_style);
     }
 }
 
@@ -768,9 +771,10 @@ fn render_menu_bottom_margin(frame: &mut Frame<'_>, area: Rect, theme: &Theme) {
 
     let bottom_y = area.bottom().saturating_sub(1);
     let margin_style = Style::default().fg(theme.ui_bg).bg(theme.field_bg);
+    let half_upper = glyphs().half_upper;
     let buffer = frame.buffer_mut();
     for x in area.x..area.right() {
-        buffer.set_string(x, bottom_y, GLYPH_HALF_UPPER, margin_style);
+        buffer.set_string(x, bottom_y, half_upper, margin_style);
     }
 }
 

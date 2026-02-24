@@ -1,4 +1,5 @@
 use ratatui::style::Color;
+use std::sync::OnceLock;
 
 /// Logical grid dimensions passed through the game as a named type.
 ///
@@ -88,6 +89,74 @@ pub const GLYPH_HALF_UPPER: &str = "▀";
 /// Lower half-block glyph for compositing.
 pub const GLYPH_HALF_LOWER: &str = "▄";
 
+/// Runtime-selected glyph mode.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum GlyphMode {
+    Unicode,
+    Ascii,
+}
+
+/// Glyph palette used by rendering paths.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct GlyphPalette {
+    pub half_upper: &'static str,
+    pub half_lower: &'static str,
+    pub solid: &'static str,
+    pub table_separator: &'static str,
+}
+
+impl GlyphMode {
+    /// Resolves glyph mode from CLI and optional environment override.
+    #[must_use]
+    pub fn resolve(force_ascii: bool) -> Self {
+        let env = std::env::var("TERMINAL_SNAKE_GLYPHS").ok();
+        glyph_mode_from_inputs(force_ascii, env.as_deref())
+    }
+}
+
+fn glyph_mode_from_inputs(force_ascii: bool, env_value: Option<&str>) -> GlyphMode {
+    if force_ascii {
+        return GlyphMode::Ascii;
+    }
+
+    if env_value.is_some_and(|value| value.eq_ignore_ascii_case("ascii")) {
+        GlyphMode::Ascii
+    } else {
+        GlyphMode::Unicode
+    }
+}
+
+static GLYPH_PALETTE: OnceLock<GlyphPalette> = OnceLock::new();
+
+/// Configures the global glyph palette. First call wins.
+pub fn configure_glyphs(mode: GlyphMode) {
+    let _ = GLYPH_PALETTE.set(match mode {
+        GlyphMode::Unicode => GlyphPalette {
+            half_upper: GLYPH_HALF_UPPER,
+            half_lower: GLYPH_HALF_LOWER,
+            solid: "█",
+            table_separator: "│",
+        },
+        GlyphMode::Ascii => GlyphPalette {
+            half_upper: "#",
+            half_lower: "#",
+            solid: "#",
+            table_separator: "|",
+        },
+    });
+}
+
+/// Returns the active glyph palette.
+#[must_use]
+pub fn glyphs() -> &'static GlyphPalette {
+    GLYPH_PALETTE.get_or_init(|| GlyphPalette {
+        half_upper: GLYPH_HALF_UPPER,
+        half_lower: GLYPH_HALF_LOWER,
+        solid: "█",
+        table_separator: "│",
+    })
+}
+
 /// Base tick interval in milliseconds.
 pub const DEFAULT_TICK_INTERVAL_MS: u64 = 200;
 
@@ -96,3 +165,32 @@ pub const MIN_TICK_INTERVAL_MS: u64 = 60;
 
 /// Score needed per speed level increase.
 pub const POINTS_PER_SPEED_LEVEL: u32 = 5;
+
+#[cfg(test)]
+mod tests {
+    use super::{GlyphMode, glyph_mode_from_inputs};
+
+    #[test]
+    fn glyph_mode_resolve_prefers_cli_flag() {
+        assert_eq!(
+            glyph_mode_from_inputs(true, Some("unicode")),
+            GlyphMode::Ascii
+        );
+    }
+
+    #[test]
+    fn glyph_mode_uses_ascii_when_env_requests_it() {
+        assert_eq!(
+            glyph_mode_from_inputs(false, Some("ascii")),
+            GlyphMode::Ascii
+        );
+    }
+
+    #[test]
+    fn glyph_mode_defaults_to_unicode() {
+        assert_eq!(
+            glyph_mode_from_inputs(false, Some("unicode")),
+            GlyphMode::Unicode
+        );
+    }
+}

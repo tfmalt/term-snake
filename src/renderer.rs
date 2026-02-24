@@ -3,9 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::Block;
 
-use crate::config::{
-    GLYPH_HALF_LOWER, GLYPH_HALF_UPPER, GridSize, PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y, Theme,
-};
+use crate::config::{GridSize, PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y, Theme, glyphs};
 use crate::game::{GameState, GameStatus};
 use crate::platform::Platform;
 use crate::ui::hud::{HudInfo, render_hud};
@@ -125,10 +123,11 @@ fn render_play_area_hud_margin(
 
     let y = gameplay_area.bottom();
     let style = Style::new().fg(theme.terminal_bg).bg(theme.field_bg);
+    let half_upper = glyphs().half_upper;
     let buffer = frame.buffer_mut();
 
     for x in gameplay_area.x..gameplay_area.right() {
-        buffer.set_string(x, y, GLYPH_HALF_UPPER, style);
+        buffer.set_string(x, y, half_upper, style);
     }
 }
 
@@ -201,21 +200,22 @@ fn composite_half_block(
     theme: &Theme,
 ) -> (&'static str, ratatui::style::Color, ratatui::style::Color) {
     let bg = theme.field_bg;
+    let palette = glyphs();
 
     match (top, bot) {
         (CellKind::Empty, CellKind::Empty) => (" ", bg, bg),
         (top_kind, CellKind::Empty) => {
             // Upper half-block: fg = top color, bg = empty
-            (GLYPH_HALF_UPPER, cell_color(top_kind, theme), bg)
+            (palette.half_upper, cell_color(top_kind, theme), bg)
         }
         (CellKind::Empty, bot_kind) => {
             // Lower half-block: fg = bottom color, bg = empty
-            (GLYPH_HALF_LOWER, cell_color(bot_kind, theme), bg)
+            (palette.half_lower, cell_color(bot_kind, theme), bg)
         }
         (top_kind, bot_kind) => {
             // Upper half-block: fg = top color, bg = bottom color
             (
-                GLYPH_HALF_UPPER,
+                palette.half_upper,
                 cell_color(top_kind, theme),
                 cell_color(bot_kind, theme),
             )
