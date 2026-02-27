@@ -27,11 +27,12 @@ enum ThemeSelectionMode {
     PauseMenu,
 }
 
-const START_MENU_ITEM_COUNT: usize = 4;
+const START_MENU_ITEM_COUNT: usize = 5;
 const START_MENU_START_IDX: usize = 0;
 const START_MENU_SPEED_IDX: usize = 1;
 const START_MENU_THEME_IDX: usize = 2;
-const START_MENU_QUIT_IDX: usize = 3;
+const START_MENU_GRID_IDX: usize = 3;
+const START_MENU_QUIT_IDX: usize = 4;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -50,6 +51,10 @@ struct Cli {
     /// Use an ASCII-safe glyph palette for poor font environments.
     #[arg(long)]
     ascii_glyphs: bool,
+
+    /// Disable the checkerboard background pattern.
+    #[arg(long)]
+    no_checkerboard: bool,
 }
 
 fn main() -> io::Result<()> {
@@ -95,6 +100,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut pause_menu_selected_idx = 0usize;
     let mut game_over_menu_selected_idx = 0usize;
     let mut theme_selection_mode: Option<ThemeSelectionMode> = None;
+    let mut checkerboard_enabled = !cli.no_checkerboard;
     let mut start_speed_adjust_mode = false;
     let mut theme_selection_dirty = false;
     let mut pending_resize_reconcile = false;
@@ -151,6 +157,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     start_selected_idx: start_menu_selected_idx,
                     start_speed_level,
                     start_speed_adjust_mode,
+                    checkerboard_enabled,
                     pause_selected_idx: pause_menu_selected_idx,
                     game_over_selected_idx: game_over_menu_selected_idx,
                     start_theme_select,
@@ -243,6 +250,9 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                             }
                             START_MENU_THEME_IDX => {
                                 theme_selection_mode = Some(ThemeSelectionMode::StartMenu)
+                            }
+                            START_MENU_GRID_IDX => {
+                                checkerboard_enabled = !checkerboard_enabled;
                             }
                             START_MENU_QUIT_IDX => {
                                 persist_selected_theme_if_dirty(

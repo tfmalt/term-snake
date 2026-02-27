@@ -55,6 +55,8 @@ pub struct Theme {
     pub ui_muted: Color,
     /// Brighter UI accent for standout secondary text and highlights.
     pub ui_bright: Color,
+    /// Alternate background for checkerboard tiles on the play field.
+    pub field_bg_alt: Color,
 }
 
 /// Emergency fallback theme used when no external/bundled themes load.
@@ -74,6 +76,7 @@ pub fn fallback_theme() -> Theme {
         ui_accent: Color::Green,
         ui_muted: Color::DarkGray,
         ui_bright: Color::Gray,
+        field_bg_alt: Color::DarkGray,
     }
 }
 

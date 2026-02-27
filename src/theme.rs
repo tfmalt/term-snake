@@ -260,6 +260,10 @@ fn parse_theme_from_str_result(id: &str, raw: &str) -> Result<Theme, ThemeParseE
         resolve_token(&parsed, "ui_muted", true, &mut stack).unwrap_or(fallback.ui_muted);
     let ui_bright_default = brighten_30_percent(ui_muted);
 
+    let field_bg =
+        resolve_token(&parsed, "field_bg", true, &mut stack).unwrap_or(fallback.field_bg);
+    let field_bg_alt_default = lighten_color(field_bg, 4);
+
     Ok(Theme {
         name: parsed.name.clone().unwrap_or_else(|| display_name(id)),
         snake_head: resolve_token(&parsed, "snake_head", true, &mut stack)
@@ -273,7 +277,7 @@ fn parse_theme_from_str_result(id: &str, raw: &str) -> Result<Theme, ThemeParseE
             .unwrap_or(fallback.super_food),
         terminal_bg: resolve_token(&parsed, "terminal_bg", true, &mut stack)
             .unwrap_or(fallback.terminal_bg),
-        field_bg: resolve_token(&parsed, "field_bg", true, &mut stack).unwrap_or(fallback.field_bg),
+        field_bg,
         ui_bg: resolve_token(&parsed, "ui_bg", true, &mut stack).unwrap_or(fallback.ui_bg),
         ui_text: resolve_token(&parsed, "ui_text", true, &mut stack).unwrap_or(fallback.ui_text),
         ui_accent: resolve_token(&parsed, "ui_accent", true, &mut stack)
@@ -281,7 +285,30 @@ fn parse_theme_from_str_result(id: &str, raw: &str) -> Result<Theme, ThemeParseE
         ui_muted,
         ui_bright: resolve_token(&parsed, "ui_bright", true, &mut stack)
             .unwrap_or(ui_bright_default),
+        field_bg_alt: resolve_token(&parsed, "field_bg_alt", true, &mut stack)
+            .unwrap_or(field_bg_alt_default),
     })
+}
+
+/// Moves each RGB channel toward 255 by the given percentage (0–100).
+/// For named ANSI colors, applies a simple lightening mapping.
+fn lighten_color(color: Color, percent: u16) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => Color::Rgb(
+            lighten_channel(r, percent),
+            lighten_channel(g, percent),
+            lighten_channel(b, percent),
+        ),
+        // Named ANSI colors lack fine granularity — return unchanged so
+        // the checkerboard stays invisible rather than overly contrasty.
+        other => other,
+    }
+}
+
+fn lighten_channel(channel: u8, percent: u16) -> u8 {
+    let remaining = 255u16.saturating_sub(u16::from(channel));
+    let increase = (remaining * percent + 50) / 100;
+    (u16::from(channel) + increase).min(255) as u8
 }
 
 fn brighten_30_percent(color: Color) -> Color {

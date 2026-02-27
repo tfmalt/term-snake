@@ -28,6 +28,7 @@ pub fn render_start_menu(
     selected_idx: usize,
     start_speed_level: u32,
     speed_adjust_mode: bool,
+    checkerboard_enabled: bool,
     theme_select: Option<ThemeSelectView<'_>>,
 ) {
     // If "terminal snake" (block font) + 2-column margin each side doesn't fit,
@@ -50,7 +51,14 @@ pub fn render_start_menu(
             theme_editing,
             theme,
         ),
-        menu_option_line("Quit", selected_idx == 3, theme),
+        menu_option_value_line(
+            "Grid",
+            if checkerboard_enabled { "On" } else { "Off" }.to_string(),
+            selected_idx == 3,
+            false,
+            theme,
+        ),
+        menu_option_line("Quit", selected_idx == 4, theme),
     ];
     let menu_height = u16::try_from(body.len()).unwrap_or(u16::MAX);
 
@@ -746,6 +754,7 @@ fn start_menu_content_width(theme: &Theme, start_speed_level: u32) -> u16 {
         "Start".to_string(),
         format!("Speed:  {start_speed_level}"),
         format!("Theme:  {}", theme.name),
+        "Grid:  Off".to_string(),
         "Quit".to_string(),
     ];
 

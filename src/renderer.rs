@@ -16,6 +16,7 @@ pub struct MenuUiState<'a> {
     pub start_speed_level: u32,
     /// Whether the speed-adjust sub-mode is active (Up/Down changes speed value).
     pub start_speed_adjust_mode: bool,
+    pub checkerboard_enabled: bool,
     pub pause_selected_idx: usize,
     pub game_over_selected_idx: usize,
     pub start_theme_select: Option<ThemeSelectView<'a>>,
@@ -59,7 +60,7 @@ pub fn render(
     );
     render_play_area_hud_margin(frame, play_area, gameplay_area, theme);
 
-    render_play_area(frame, gameplay_area, state, theme);
+    render_play_area(frame, gameplay_area, state, theme, menu_ui.checkerboard_enabled);
 
     if state.is_start_screen() {
         render_start_menu(
@@ -70,6 +71,7 @@ pub fn render(
             menu_ui.start_selected_idx,
             menu_ui.start_speed_level,
             menu_ui.start_speed_adjust_mode,
+            menu_ui.checkerboard_enabled,
             menu_ui.start_theme_select,
         );
         return;
@@ -141,8 +143,25 @@ fn render_play_area_hud_margin(
     }
 }
 
+/// Returns the checkerboard background color for a given game-grid cell.
+fn checker_bg(col: usize, game_row: usize, theme: &Theme) -> ratatui::style::Color {
+    let tile_x = col / 6;
+    let tile_y = game_row / 6;
+    if (tile_x + tile_y).is_multiple_of(2) {
+        theme.field_bg
+    } else {
+        theme.field_bg_alt
+    }
+}
+
 /// Builds a color grid from game state and composites half-block row-pairs.
-fn render_play_area(frame: &mut Frame<'_>, inner: Rect, state: &GameState, theme: &Theme) {
+fn render_play_area(
+    frame: &mut Frame<'_>,
+    inner: Rect,
+    state: &GameState,
+    theme: &Theme,
+    checkerboard_enabled: bool,
+) {
     let bounds = state.bounds();
     let grid = build_cell_grid(state, bounds);
     let glow = state.active_glow();
@@ -173,7 +192,18 @@ fn render_play_area(frame: &mut Frame<'_>, inner: Rect, state: &GameState, theme
                 CellKind::Empty
             };
 
-            let (glyph, fg, bg) = composite_half_block(top_kind, bot_kind, theme, glow);
+            let top_bg = if checkerboard_enabled {
+                checker_bg(col, top_game_row, theme)
+            } else {
+                theme.field_bg
+            };
+            let bot_bg = if checkerboard_enabled {
+                checker_bg(col, bot_game_row, theme)
+            } else {
+                theme.field_bg
+            };
+            let (glyph, fg, bg) =
+                composite_half_block(top_kind, bot_kind, top_bg, bot_bg, theme, glow);
             buffer.set_string(x, y, glyph, Style::new().fg(fg).bg(bg));
         }
     }
@@ -221,16 +251,21 @@ fn build_cell_grid(state: &GameState, bounds: GridSize) -> Vec<CellKind> {
 fn composite_half_block(
     top: CellKind,
     bot: CellKind,
+    top_bg: ratatui::style::Color,
+    bot_bg: ratatui::style::Color,
     theme: &Theme,
     glow: Option<&GlowEffect>,
 ) -> (&'static str, ratatui::style::Color, ratatui::style::Color) {
-    let bg = theme.field_bg;
     let palette = glyphs();
 
     match (top, bot) {
-        (CellKind::Empty, CellKind::Empty) => (" ", bg, bg),
-        (top_kind, CellKind::Empty) => (palette.half_upper, cell_color(top_kind, theme, glow), bg),
-        (CellKind::Empty, bot_kind) => (palette.half_lower, cell_color(bot_kind, theme, glow), bg),
+        (CellKind::Empty, CellKind::Empty) => (palette.half_upper, top_bg, bot_bg),
+        (top_kind, CellKind::Empty) => {
+            (palette.half_upper, cell_color(top_kind, theme, glow), bot_bg)
+        }
+        (CellKind::Empty, bot_kind) => {
+            (palette.half_lower, cell_color(bot_kind, theme, glow), top_bg)
+        }
         (top_kind, bot_kind) => (
             palette.half_upper,
             cell_color(top_kind, theme, glow),
