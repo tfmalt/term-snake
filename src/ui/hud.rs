@@ -1,6 +1,8 @@
+use std::time::{Duration, Instant};
+
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
@@ -9,6 +11,21 @@ use crate::game::GameState;
 use crate::platform::Platform;
 
 const HUD_INNER_MARGIN_X: u16 = 1;
+const VALUE_FLASH_DURATION: Duration = Duration::from_secs(1);
+
+/// Per-value flash timestamps for HUD value transitions.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HudValueFlash {
+    pub length_changed_at: Option<Instant>,
+    pub level_changed_at: Option<Instant>,
+    pub score_changed_at: Option<Instant>,
+    pub high_score_changed_at: Option<Instant>,
+    pub dimensions_changed_at: Option<Instant>,
+    pub food_count_changed_at: Option<Instant>,
+    pub next_points_changed_at: Option<Instant>,
+    pub bonus_multiplier_changed_at: Option<Instant>,
+    pub coverage_changed_at: Option<Instant>,
+}
 
 /// Supplemental values displayed by the HUD rows.
 #[derive(Debug, Clone)]
@@ -20,6 +37,10 @@ pub struct HudInfo<'a> {
     pub debug: bool,
     /// Pre-formatted debug string; empty when `debug` is false.
     pub debug_line: String,
+    /// Wall-clock instant of this frame render.
+    pub now: Instant,
+    /// Last-change timestamps for HUD values.
+    pub value_flash: HudValueFlash,
 }
 
 /// Renders the two-line HUD and returns the remaining play area above it.
@@ -63,50 +84,44 @@ pub fn render_hud(
     frame.render_widget(Paragraph::new("").style(hud_bg), score_band);
     frame.render_widget(Paragraph::new("").style(hud_bg), status_band);
 
-    // Score line: Score | Length | Speed | Hi
-    let [col1, col2, col3, col4] = Layout::horizontal([
-        Constraint::Percentage(25),
-        Constraint::Percentage(25),
-        Constraint::Percentage(25),
-        Constraint::Percentage(25),
-    ])
-    .areas(score_area);
-
+    // Top status line: Length | Level | Score | Hi
     frame.render_widget(
-        Paragraph::new(Line::from(format!("Score: {}", state.score)))
-            .alignment(Alignment::Left)
-            .style(left_style(info.theme)),
-        col1,
+        Paragraph::new(top_info_line(
+            state.snake.len(),
+            state.speed_level,
+            state.score,
+            info.high_score,
+            info.game_over_reference_high_score,
+            usize::from(score_area.width),
+            info.theme.ui_accent,
+            info.theme.ui_bright,
+            info.theme.ui_muted,
+            info.value_flash,
+            info.now,
+        ))
+        .alignment(Alignment::Right)
+        .style(Style::default().fg(Color::DarkGray)),
+        score_area,
     );
 
-    frame.render_widget(
-        Paragraph::new(Line::from(format!("Length: {}", state.snake.len())))
-            .alignment(Alignment::Center),
-        col2,
-    );
-
-    frame.render_widget(
-        Paragraph::new(Line::from(format!("Speed: {}", state.speed_level)))
-            .alignment(Alignment::Center),
-        col3,
-    );
-
-    let right_text = format!("Hi: {}", info.high_score);
-    frame.render_widget(
-        Paragraph::new(Line::from(right_text)).alignment(Alignment::Right),
-        col4,
-    );
-
-    // Status line: game state label
+    // Bottom status line: dimensions, food count, and coverage
     let dimensions_text = format!("{}x{}", state.bounds().width, state.bounds().height);
     let food_count_text = state.calculated_food_count().to_string();
+    let next_food_points_text = state.ordinary_food_projected_points().to_string();
+    let bonus_multiplier_text = format!("{:.2}x", state.ordinary_food_projected_multiplier());
     let coverage_text = format!("{:.2}", state.play_area_coverage_percent());
     frame.render_widget(
         Paragraph::new(bottom_info_line(
             dimensions_text.as_str(),
             food_count_text.as_str(),
+            next_food_points_text.as_str(),
+            bonus_multiplier_text.as_str(),
             coverage_text.as_str(),
             info.theme.food,
+            info.theme.ui_muted,
+            info.theme.ui_accent,
+            info.value_flash,
+            info.now,
         ))
         .alignment(Alignment::Right)
         .style(Style::default().fg(Color::DarkGray)),
@@ -118,6 +133,8 @@ pub fn render_hud(
         let debug_width = bottom_info_width(
             dimensions_text.as_str(),
             food_count_text.as_str(),
+            next_food_points_text.as_str(),
+            bonus_multiplier_text.as_str(),
             coverage_text.as_str(),
         )
         .min(u16::MAX as usize) as u16;
@@ -135,8 +152,14 @@ pub fn render_hud(
             Paragraph::new(bottom_info_line(
                 dimensions_text.as_str(),
                 food_count_text.as_str(),
+                next_food_points_text.as_str(),
+                bonus_multiplier_text.as_str(),
                 coverage_text.as_str(),
                 info.theme.food,
+                info.theme.ui_muted,
+                info.theme.ui_accent,
+                info.value_flash,
+                info.now,
             ))
             .alignment(Alignment::Right)
             .style(Style::default().fg(Color::DarkGray)),
@@ -172,27 +195,232 @@ fn render_hud_bottom_margin(frame: &mut Frame<'_>, bottom_margin: Rect, theme: &
     }
 }
 
-fn left_style(theme: &Theme) -> Style {
-    Style::default()
-        .fg(theme.ui_text)
-        .add_modifier(Modifier::BOLD)
+fn top_info_line(
+    length: usize,
+    level: u32,
+    score: u32,
+    high_score: u32,
+    reference_high_score: u32,
+    available_width: usize,
+    highlight_color: Color,
+    value_color: Color,
+    muted_color: Color,
+    value_flash: HudValueFlash,
+    now: Instant,
+) -> Line<'static> {
+    let hide_score = score == high_score && score > reference_high_score;
+    let has_new_high_score = score > reference_high_score;
+    let use_compact_labels =
+        top_info_width(length, level, score, high_score, false, hide_score) > available_width;
+    let highlight_scores = score == high_score;
+    let sep = format!(" {} ", glyphs().table_separator);
+    let length_label = if use_compact_labels { "L" } else { "Length" };
+    let level_label = if use_compact_labels { "V" } else { "Level" };
+    let score_label = if use_compact_labels { "S" } else { "Score" };
+    let high_score_label = if use_compact_labels { "H" } else { "Hi" };
+    let length_color = flash_color(
+        value_color,
+        highlight_color,
+        value_flash.length_changed_at,
+        now,
+    );
+    let level_color = flash_color(
+        value_color,
+        highlight_color,
+        value_flash.level_changed_at,
+        now,
+    );
+    let score_base_color = if highlight_scores {
+        highlight_color
+    } else {
+        value_color
+    };
+    let high_score_base_color = if has_new_high_score {
+        highlight_color
+    } else {
+        muted_color
+    };
+    let score_color = flash_color(
+        score_base_color,
+        highlight_color,
+        value_flash.score_changed_at,
+        now,
+    );
+    let high_score_color = flash_color(
+        high_score_base_color,
+        highlight_color,
+        value_flash.high_score_changed_at,
+        now,
+    );
+    let length_style = Style::default().fg(length_color);
+    let level_style = Style::default().fg(level_color);
+    let score_style = Style::default().fg(score_color);
+    let high_score_style = Style::default().fg(high_score_color);
+    let mut spans = vec![
+        Span::raw(format!("{length_label}: ")),
+        Span::styled(length.to_string(), length_style),
+        Span::raw(sep.clone()),
+        Span::raw(format!("{level_label}: ")),
+        Span::styled(level.to_string(), level_style),
+        Span::raw(sep.clone()),
+    ];
+
+    if !hide_score {
+        spans.push(Span::raw(format!("{score_label}: ")));
+        spans.push(Span::styled(score.to_string(), score_style));
+        spans.push(Span::raw(sep));
+    }
+
+    spans.push(Span::raw(format!("{high_score_label}: ")));
+    spans.push(Span::styled(high_score.to_string(), high_score_style));
+
+    Line::from(spans)
+}
+
+fn top_info_width(
+    length: usize,
+    level: u32,
+    score: u32,
+    high_score: u32,
+    compact: bool,
+    hide_score: bool,
+) -> usize {
+    let length_label = if compact { "L" } else { "Length" };
+    let level_label = if compact { "V" } else { "Level" };
+    let score_label = if compact { "S" } else { "Score" };
+    let high_score_label = if compact { "H" } else { "Hi" };
+    let sep_width = format!(" {} ", glyphs().table_separator).chars().count();
+
+    let mut width = format!("{length_label}: {length}").chars().count()
+        + sep_width
+        + format!("{level_label}: {level}").chars().count()
+        + sep_width;
+
+    if !hide_score {
+        width += format!("{score_label}: {score}").chars().count() + sep_width;
+    }
+
+    width + format!("{high_score_label}: {high_score}").chars().count()
 }
 
 fn bottom_info_line<'a>(
     dimensions: &'a str,
     food_count: &'a str,
+    next_food_points: &'a str,
+    bonus_multiplier: &'a str,
     coverage: &'a str,
     food_color: Color,
+    value_color: Color,
+    highlight_color: Color,
+    value_flash: HudValueFlash,
+    now: Instant,
 ) -> Line<'a> {
     let sep = format!(" {} ", glyphs().table_separator);
+    let dimensions_style = Style::default().fg(flash_color(
+        value_color,
+        highlight_color,
+        value_flash.dimensions_changed_at,
+        now,
+    ));
+    let food_count_style = Style::default().fg(flash_color(
+        value_color,
+        highlight_color,
+        value_flash.food_count_changed_at,
+        now,
+    ));
+    let next_points_style = Style::default().fg(flash_color(
+        value_color,
+        highlight_color,
+        value_flash.next_points_changed_at,
+        now,
+    ));
+    let bonus_multiplier_style = Style::default().fg(flash_color(
+        value_color,
+        highlight_color,
+        value_flash.bonus_multiplier_changed_at,
+        now,
+    ));
+    let coverage_style = Style::default().fg(flash_color(
+        value_color,
+        highlight_color,
+        value_flash.coverage_changed_at,
+        now,
+    ));
     Line::from(vec![
-        Span::raw(dimensions.to_string()),
+        Span::styled(dimensions.to_string(), dimensions_style),
         Span::raw(sep.clone()),
         Span::styled(food_count_marker(), Style::default().fg(food_color)),
-        Span::raw(format!(" = {food_count}")),
+        Span::raw(" = "),
+        Span::styled(food_count.to_string(), food_count_style),
+        Span::raw(sep.clone()),
+        Span::raw("v = "),
+        Span::styled(next_food_points.to_string(), next_points_style),
+        Span::raw(sep.clone()),
+        Span::raw("b = "),
+        Span::styled(bonus_multiplier.to_string(), bonus_multiplier_style),
         Span::raw(sep),
-        Span::raw(format!("{coverage}%")),
+        Span::styled(format!("{coverage}%"), coverage_style),
     ])
+}
+
+fn flash_color(base: Color, accent: Color, changed_at: Option<Instant>, now: Instant) -> Color {
+    let Some(changed_at) = changed_at else {
+        return base;
+    };
+    let elapsed = now.saturating_duration_since(changed_at);
+    if elapsed >= VALUE_FLASH_DURATION {
+        return base;
+    }
+    let t = elapsed.as_secs_f32() / VALUE_FLASH_DURATION.as_secs_f32();
+    blend_color(accent, base, ease_out_cubic(t))
+}
+
+fn ease_out_cubic(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t).powi(3)
+}
+
+fn blend_color(from: Color, to: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    match (color_to_rgb(from), color_to_rgb(to)) {
+        (Some((fr, fg, fb)), Some((tr, tg, tb))) => {
+            Color::Rgb(lerp_u8(fr, tr, t), lerp_u8(fg, tg, t), lerp_u8(fb, tb, t))
+        }
+        _ => {
+            if t < 1.0 {
+                from
+            } else {
+                to
+            }
+        }
+    }
+}
+
+fn lerp_u8(from: u8, to: u8, t: f32) -> u8 {
+    ((from as f32) + ((to as f32) - (from as f32)) * t).round() as u8
+}
+
+fn color_to_rgb(color: Color) -> Option<(u8, u8, u8)> {
+    match color {
+        Color::Black => Some((0, 0, 0)),
+        Color::Red => Some((205, 49, 49)),
+        Color::Green => Some((13, 188, 121)),
+        Color::Yellow => Some((229, 229, 16)),
+        Color::Blue => Some((36, 114, 200)),
+        Color::Magenta => Some((188, 63, 188)),
+        Color::Cyan => Some((17, 168, 205)),
+        Color::Gray => Some((229, 229, 229)),
+        Color::DarkGray => Some((102, 102, 102)),
+        Color::LightRed => Some((241, 76, 76)),
+        Color::LightGreen => Some((35, 209, 139)),
+        Color::LightYellow => Some((245, 245, 67)),
+        Color::LightBlue => Some((59, 142, 234)),
+        Color::LightMagenta => Some((214, 112, 214)),
+        Color::LightCyan => Some((41, 184, 219)),
+        Color::White => Some((255, 255, 255)),
+        Color::Rgb(r, g, b) => Some((r, g, b)),
+        _ => None,
+    }
 }
 
 fn food_count_marker() -> &'static str {
@@ -203,13 +431,25 @@ fn food_count_marker() -> &'static str {
     }
 }
 
-fn bottom_info_width(dimensions: &str, food_count: &str, coverage: &str) -> usize {
-    // {dimensions} │ ■ = {food_count} │ {coverage}%
+fn bottom_info_width(
+    dimensions: &str,
+    food_count: &str,
+    next_food_points: &str,
+    bonus_multiplier: &str,
+    coverage: &str,
+) -> usize {
+    // {dimensions} │ ■ = {food_count} │ v = {next_food_points} │ b = {bonus_multiplier} │ {coverage}%
     dimensions.chars().count()
         + 3 // " │ "
         + 1 // marker
         + 3 // " = "
         + food_count.chars().count()
+        + 3 // " │ "
+        + 4 // "v = "
+        + next_food_points.chars().count()
+        + 3 // " │ "
+        + 4 // "b = "
+        + bonus_multiplier.chars().count()
         + 3 // " │ "
         + coverage.chars().count()
         + 1 // "%"
