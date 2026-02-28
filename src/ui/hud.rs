@@ -104,19 +104,17 @@ pub fn render_hud(
         score_area,
     );
 
-    // Bottom status line: dimensions, food count, and coverage
+    // Bottom status line: dimensions, food count, next points, bonus multiplier
     let dimensions_text = format!("{}x{}", state.bounds().width, state.bounds().height);
     let food_count_text = state.calculated_food_count().to_string();
     let next_food_points_text = state.ordinary_food_projected_points().to_string();
     let bonus_multiplier_text = format!("{:.2}x", state.ordinary_food_projected_multiplier());
-    let coverage_text = format!("{:.2}", state.play_area_coverage_percent());
     frame.render_widget(
         Paragraph::new(bottom_info_line(
             dimensions_text.as_str(),
             food_count_text.as_str(),
             next_food_points_text.as_str(),
             bonus_multiplier_text.as_str(),
-            coverage_text.as_str(),
             info.theme.food,
             info.theme.ui_muted,
             info.theme.ui_accent,
@@ -135,7 +133,6 @@ pub fn render_hud(
             food_count_text.as_str(),
             next_food_points_text.as_str(),
             bonus_multiplier_text.as_str(),
-            coverage_text.as_str(),
         )
         .min(u16::MAX as usize) as u16;
         let [debug_left, debug_right] =
@@ -154,7 +151,6 @@ pub fn render_hud(
                 food_count_text.as_str(),
                 next_food_points_text.as_str(),
                 bonus_multiplier_text.as_str(),
-                coverage_text.as_str(),
                 info.theme.food,
                 info.theme.ui_muted,
                 info.theme.ui_accent,
@@ -308,7 +304,6 @@ fn bottom_info_line<'a>(
     food_count: &'a str,
     next_food_points: &'a str,
     bonus_multiplier: &'a str,
-    coverage: &'a str,
     food_color: Color,
     value_color: Color,
     highlight_color: Color,
@@ -340,26 +335,18 @@ fn bottom_info_line<'a>(
         value_flash.bonus_multiplier_changed_at,
         now,
     ));
-    let coverage_style = Style::default().fg(flash_color(
-        value_color,
-        highlight_color,
-        value_flash.coverage_changed_at,
-        now,
-    ));
     Line::from(vec![
         Span::styled(dimensions.to_string(), dimensions_style),
         Span::raw(sep.clone()),
         Span::styled(food_count_marker(), Style::default().fg(food_color)),
-        Span::raw(" = "),
+        Span::raw(": "),
         Span::styled(food_count.to_string(), food_count_style),
         Span::raw(sep.clone()),
-        Span::raw("v = "),
+        Span::raw("v: "),
         Span::styled(next_food_points.to_string(), next_points_style),
         Span::raw(sep.clone()),
-        Span::raw("b = "),
+        Span::raw("b: "),
         Span::styled(bonus_multiplier.to_string(), bonus_multiplier_style),
-        Span::raw(sep),
-        Span::styled(format!("{coverage}%"), coverage_style),
     ])
 }
 
@@ -436,21 +423,17 @@ fn bottom_info_width(
     food_count: &str,
     next_food_points: &str,
     bonus_multiplier: &str,
-    coverage: &str,
 ) -> usize {
-    // {dimensions} │ ■ = {food_count} │ v = {next_food_points} │ b = {bonus_multiplier} │ {coverage}%
+    // {dimensions} │ ■: {food_count} │ v: {next_food_points} │ b: {bonus_multiplier}
     dimensions.chars().count()
         + 3 // " │ "
         + 1 // marker
-        + 3 // " = "
+        + 2 // ": "
         + food_count.chars().count()
         + 3 // " │ "
-        + 4 // "v = "
+        + 3 // "v: "
         + next_food_points.chars().count()
         + 3 // " │ "
-        + 4 // "b = "
+        + 3 // "b: "
         + bonus_multiplier.chars().count()
-        + 3 // " │ "
-        + coverage.chars().count()
-        + 1 // "%"
 }
