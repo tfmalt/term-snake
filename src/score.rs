@@ -121,7 +121,9 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{ScoreFile, load_score_file, load_score_file_from_path, write_score_file_to_path};
+    #[cfg(target_os = "linux")]
+    use super::load_score_file;
+    use super::{ScoreFile, load_score_file_from_path, write_score_file_to_path};
 
     #[test]
     fn score_serialization_round_trip() {
