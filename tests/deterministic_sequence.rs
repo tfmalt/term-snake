@@ -20,7 +20,8 @@ fn stepwise_food_collection_and_wall_collision() {
 
     state.tick();
     assert_eq!(state.status, GameStatus::Playing);
-    assert_eq!(state.score, 2);
+    // Base score (2) plus coverage bonus at 12.5% coverage: floor(2 * (1 + 1.25)) = 4.
+    assert_eq!(state.score, 4);
     assert_eq!(state.snake.len(), 3);
     assert_eq!(state.snake.head(), Position { x: 2, y: 1 });
 

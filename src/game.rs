@@ -3,7 +3,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::time::Duration;
 
-use crate::config::{FOOD_PER_SPEED_LEVEL, GridSize};
+use crate::config::{FOOD_PER_SPEED_LEVEL, GridSize, MAX_START_SPEED_LEVEL};
 use crate::food::Food;
 use crate::input::GameInput;
 use crate::snake::{Position, Snake};
@@ -100,6 +100,9 @@ pub struct FoodDensity {
     pub cells_per: usize,
 }
 
+const COVERAGE_BONUS_RATE: f64 = 0.10;
+const COVERAGE_BONUS_CAP: f64 = 2.0;
+
 /// Returns the default food density configuration.
 #[must_use]
 pub fn default_food_density() -> FoodDensity {
@@ -151,7 +154,7 @@ impl GameState {
         food_density: FoodDensity,
     ) -> Self {
         let rng = StdRng::seed_from_u64(seed);
-        let base_speed_level = starting_speed_level.max(1);
+        let base_speed_level = starting_speed_level.clamp(1, MAX_START_SPEED_LEVEL);
         let normalized_density = normalize_food_density(food_density);
         let start = Position {
             x: i32::from(bounds.width / 2),
@@ -229,7 +232,10 @@ impl GameState {
 
         if let Some(idx) = eaten_food_idx {
             let eaten_food = self.foods.swap_remove(idx);
-            self.score += eaten_food.points() * self.speed_level;
+            let base_points = eaten_food.points() * self.speed_level;
+            let awarded_points =
+                score_with_coverage_bonus(base_points, self.play_area_coverage_percent());
+            self.score += awarded_points;
             let prev_speed_level = self.speed_level;
             self.update_speed_level();
 
@@ -298,13 +304,14 @@ impl GameState {
     /// Use this when the player adjusts the speed selector on the start screen —
     /// it keeps the backdrop (food positions, snake) stable across keypresses.
     pub fn set_base_speed_level(&mut self, level: u32) {
-        self.base_speed_level = level.max(1);
+        self.base_speed_level = level.clamp(1, MAX_START_SPEED_LEVEL);
         self.speed_level = self.base_speed_level;
     }
 
     fn update_speed_level(&mut self) {
         let food_eaten = self.snake.len().saturating_sub(2) as u32;
-        self.speed_level = self.base_speed_level + (food_eaten / FOOD_PER_SPEED_LEVEL);
+        self.speed_level = (self.base_speed_level + (food_eaten / FOOD_PER_SPEED_LEVEL))
+            .min(MAX_START_SPEED_LEVEL);
     }
 
     /// Returns the currently active glow effect, if any.
@@ -360,6 +367,43 @@ impl GameState {
         desired_food_count(self.bounds, self.snake.len(), self.food_density)
     }
 
+    /// Returns the current base point value of ordinary food.
+    ///
+    /// This reflects speed scaling only (`1 * speed_level`) and intentionally
+    /// ignores board state and coverage bonus.
+    #[must_use]
+    pub fn ordinary_food_base_points(&self) -> u32 {
+        self.speed_level
+    }
+
+    /// Returns projected ordinary-food points including the coverage bonus.
+    ///
+    /// This mirrors the runtime scoring order in `tick()`: the snake grows
+    /// first, then score is awarded using post-growth coverage.
+    #[must_use]
+    pub fn ordinary_food_projected_points(&self) -> u32 {
+        score_with_coverage_bonus(
+            self.ordinary_food_base_points(),
+            self.coverage_percent_after_growth(1),
+        )
+    }
+
+    /// Returns projected ordinary-food score multiplier including coverage bonus.
+    #[must_use]
+    pub fn ordinary_food_projected_multiplier(&self) -> f64 {
+        coverage_total_multiplier(self.coverage_percent_after_growth(1))
+    }
+
+    fn coverage_percent_after_growth(&self, growth: usize) -> f64 {
+        let total_cells = self.bounds.total_cells();
+        if total_cells == 0 {
+            return 0.0;
+        }
+
+        let projected_len = self.snake.len().saturating_add(growth).min(total_cells);
+        (projected_len as f64 / total_cells as f64) * 100.0
+    }
+
     /// Returns the snake coverage of the full play area as a percentage.
     #[must_use]
     pub fn play_area_coverage_percent(&self) -> f64 {
@@ -397,6 +441,16 @@ impl GameState {
             self.foods.push(food);
         }
     }
+}
+
+fn score_with_coverage_bonus(base_points: u32, coverage_percent: f64) -> u32 {
+    let total = (base_points as f64) * coverage_total_multiplier(coverage_percent);
+    total.floor() as u32
+}
+
+fn coverage_total_multiplier(coverage_percent: f64) -> f64 {
+    let bonus_multiplier = (coverage_percent * COVERAGE_BONUS_RATE).min(COVERAGE_BONUS_CAP);
+    1.0 + bonus_multiplier
 }
 
 fn normalize_food_density(food_density: FoodDensity) -> FoodDensity {
@@ -463,7 +517,7 @@ fn spawn_food_avoiding<R: Rng + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use crate::config::GridSize;
+    use crate::config::{GridSize, MAX_START_SPEED_LEVEL};
     use crate::food::Food;
     use crate::input::Direction;
 
@@ -559,6 +613,18 @@ mod tests {
             3,
         );
         assert_eq!(state.speed_level, 3);
+    }
+
+    #[test]
+    fn starting_speed_level_is_clamped_to_max() {
+        let state = GameState::new_with_options(
+            GridSize {
+                width: 10,
+                height: 10,
+            },
+            MAX_START_SPEED_LEVEL + 5,
+        );
+        assert_eq!(state.speed_level, MAX_START_SPEED_LEVEL);
     }
 
     #[test]
@@ -665,5 +731,91 @@ mod tests {
 
         // Initial snake length is 2 on a 400-cell board: 0.50%
         assert!((state.play_area_coverage_percent() - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn coverage_bonus_increases_points() {
+        let base_points = 10;
+        let points = super::score_with_coverage_bonus(base_points, 10.0);
+        assert_eq!(points, 20, "10 base with 10% coverage should be 2x");
+    }
+
+    #[test]
+    fn coverage_bonus_is_capped() {
+        let base_points = 10;
+        let points = super::score_with_coverage_bonus(base_points, 100.0);
+        assert_eq!(points, 30, "bonus cap of 2.0 should limit total to 3x base");
+    }
+
+    #[test]
+    fn speed_level_up_glow_stops_at_max_speed() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 300,
+                height: 20,
+            },
+            99,
+        );
+        state.set_base_speed_level(MAX_START_SPEED_LEVEL);
+        let long_segments = (0..100)
+            .map(|i| Position { x: 5 - i, y: 5 })
+            .collect::<Vec<_>>();
+        state.snake = Snake::from_segments(long_segments, Direction::Right)
+            .expect("long snake segments should be valid");
+        state.foods = vec![Food::new(Position { x: 6, y: 5 })];
+
+        state.tick();
+
+        assert_eq!(state.speed_level, MAX_START_SPEED_LEVEL);
+        assert_ne!(
+            state.active_glow().map(|g| g.trigger),
+            Some(super::GlowTrigger::SpeedLevelUp)
+        );
+    }
+
+    #[test]
+    fn ordinary_food_base_points_tracks_speed_level() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 8,
+                height: 8,
+            },
+            17,
+        );
+        state.set_base_speed_level(4);
+
+        assert_eq!(state.ordinary_food_base_points(), 4);
+    }
+
+    #[test]
+    fn ordinary_food_projected_points_include_coverage_bonus() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 4,
+                height: 4,
+            },
+            22,
+        );
+        state.set_base_speed_level(4);
+
+        // Length 2 on 16 cells; ordinary eat grows to 3 => 18.75% coverage.
+        // base=4, bonus=min(18.75 * 0.10, 2.0)=1.875
+        // projected=floor(4 * (1 + 1.875))=11
+        assert_eq!(state.ordinary_food_projected_points(), 11);
+    }
+
+    #[test]
+    fn ordinary_food_projected_multiplier_matches_formula() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 4,
+                height: 4,
+            },
+            31,
+        );
+        state.set_base_speed_level(2);
+
+        // Post-growth coverage is 18.75%, so multiplier is 1 + min(18.75 * 0.10, 2.0) = 2.875.
+        assert!((state.ordinary_food_projected_multiplier() - 2.875).abs() < f64::EPSILON);
     }
 }
