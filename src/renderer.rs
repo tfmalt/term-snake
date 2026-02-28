@@ -19,6 +19,8 @@ pub struct MenuUiState<'a> {
     /// Whether the speed-adjust sub-mode is active (Up/Down changes speed value).
     pub start_speed_adjust_mode: bool,
     pub checkerboard_enabled: bool,
+    pub game_border_enabled: bool,
+    pub play_area_too_small: bool,
     pub pause_selected_idx: usize,
     pub game_over_selected_idx: usize,
     pub start_theme_select: Option<ThemeSelectView<'a>>,
@@ -60,7 +62,11 @@ pub fn render(
         Block::default().style(Style::new().bg(theme.field_bg)),
         gameplay_area,
     );
-    render_play_area_hud_margin(frame, play_area, gameplay_area, theme);
+    if menu_ui.game_border_enabled {
+        render_play_area_border(frame, play_area, gameplay_area, theme);
+    } else {
+        render_play_area_hud_margin(frame, play_area, gameplay_area, theme);
+    }
 
     render_play_area(
         frame,
@@ -76,12 +82,14 @@ pub fn render(
             play_area,
             hud_info.high_score,
             hud_info.theme,
+            menu_ui.play_area_too_small,
             menu_ui.start_selected_idx,
             menu_ui.start_settings_open,
             menu_ui.start_settings_selected_idx,
             menu_ui.start_speed_level,
             menu_ui.start_speed_adjust_mode,
             menu_ui.checkerboard_enabled,
+            menu_ui.game_border_enabled,
             menu_ui.start_theme_select,
         );
         return;
@@ -92,6 +100,7 @@ pub fn render(
             frame,
             play_area,
             hud_info.theme,
+            menu_ui.play_area_too_small,
             menu_ui.pause_selected_idx,
             menu_ui.pause_theme_select,
         ),
@@ -101,6 +110,7 @@ pub fn render(
             state.score,
             hud_info.game_over_reference_high_score,
             state.snake.len(),
+            state.play_area_coverage_percent(),
             state.death_reason,
             state.elapsed_duration(),
             hud_info.theme,
@@ -112,12 +122,51 @@ pub fn render(
             state.score,
             hud_info.game_over_reference_high_score,
             state.snake.len(),
+            state.play_area_coverage_percent(),
             state.death_reason,
             state.elapsed_duration(),
             hud_info.theme,
             menu_ui.game_over_selected_idx,
         ),
         _ => {}
+    }
+}
+
+fn render_play_area_border(
+    frame: &mut Frame<'_>,
+    play_area: Rect,
+    gameplay_area: Rect,
+    theme: &Theme,
+) {
+    let style = Style::new().fg(theme.ui_bright).bg(theme.terminal_bg);
+    let buffer = frame.buffer_mut();
+
+    if gameplay_area.y > play_area.y {
+        let top_y = gameplay_area.y - 1;
+        for x in gameplay_area.x..gameplay_area.right() {
+            buffer.set_string(x, top_y, "▁", style);
+        }
+    }
+
+    if gameplay_area.bottom() < play_area.bottom() {
+        let bottom_y = gameplay_area.bottom();
+        for x in gameplay_area.x..gameplay_area.right() {
+            buffer.set_string(x, bottom_y, "▔", style);
+        }
+    }
+
+    if gameplay_area.x > play_area.x {
+        let left_x = gameplay_area.x - 1;
+        for y in gameplay_area.y..gameplay_area.bottom() {
+            buffer.set_string(left_x, y, "▕", style);
+        }
+    }
+
+    if gameplay_area.right() < play_area.right() {
+        let right_x = gameplay_area.right();
+        for y in gameplay_area.y..gameplay_area.bottom() {
+            buffer.set_string(right_x, y, "▏", style);
+        }
     }
 }
 
