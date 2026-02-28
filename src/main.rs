@@ -18,7 +18,7 @@ use terminal_snake::score::{
 };
 use terminal_snake::terminal_runtime::{AppTerminal, TerminalSession};
 use terminal_snake::theme::ThemeCatalog;
-use terminal_snake::ui::hud::HudInfo;
+use terminal_snake::ui::hud::{HudInfo, HudValueFlash};
 use terminal_snake::ui::menu::ThemeSelectView;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -27,16 +27,30 @@ enum ThemeSelectionMode {
     PauseMenu,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct HudTrackedValues {
+    length: usize,
+    level: u32,
+    score: u32,
+    high_score: u32,
+    dimensions: (u16, u16),
+    food_count: usize,
+    next_points: u32,
+    bonus_multiplier_hundredths: u32,
+    coverage_hundredths: u32,
+}
+
 const START_MENU_ITEM_COUNT: usize = 3;
 const START_MENU_START_IDX: usize = 0;
 const START_MENU_SETTINGS_IDX: usize = 1;
 const START_MENU_QUIT_IDX: usize = 2;
 
-const START_SETTINGS_ITEM_COUNT: usize = 4;
+const START_SETTINGS_ITEM_COUNT: usize = 5;
 const START_SETTINGS_SPEED_IDX: usize = 0;
 const START_SETTINGS_THEME_IDX: usize = 1;
 const START_SETTINGS_GRID_IDX: usize = 2;
-const START_SETTINGS_BACK_IDX: usize = 3;
+const START_SETTINGS_BORDER_IDX: usize = 3;
+const START_SETTINGS_BACK_IDX: usize = 4;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -90,6 +104,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     // matches the exact frame area the renderer will use.
     let frame_area = terminal.size()?;
     let mut bounds = grid_bounds_from_frame(frame_area, cli.debug)?;
+    let mut play_area_is_too_small = play_area_too_small(frame_area, cli.debug);
     let mut input = InputHandler::new();
     let mut start_speed_level = cli.speed.clamp(1, MAX_START_SPEED_LEVEL);
     let mut state = GameState::new_with_options(bounds, start_speed_level);
@@ -107,20 +122,38 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut start_settings_selected_idx = 0usize;
     let mut theme_selection_mode: Option<ThemeSelectionMode> = None;
     let mut checkerboard_enabled = !cli.no_checkerboard;
+    let mut game_border_enabled = true;
     let mut start_speed_adjust_mode = false;
     let mut theme_selection_dirty = false;
     let mut pending_resize_reconcile = false;
     let mut last_resize_reconcile = Instant::now();
+    let mut hud_value_flash = HudValueFlash::default();
+    let mut last_hud_values: Option<HudTrackedValues> = None;
+
+    if play_area_is_too_small && state.status == GameStatus::Playing {
+        state.status = GameStatus::Paused;
+    }
 
     loop {
         if pending_resize_reconcile || last_resize_reconcile.elapsed() >= Duration::from_millis(250)
         {
             reconcile_resize_if_needed(terminal, cli.debug, &mut bounds, &mut state)?;
+            let frame_area = terminal.size()?;
+            play_area_is_too_small = play_area_too_small(frame_area, cli.debug);
+            if play_area_is_too_small && state.status == GameStatus::Playing {
+                state.status = GameStatus::Paused;
+                pause_menu_selected_idx = 0;
+            }
             pending_resize_reconcile = false;
             last_resize_reconcile = Instant::now();
         }
 
         terminal.draw(|frame| {
+            let now = Instant::now();
+            let displayed_high_score = high_score.max(state.score);
+            let hud_values = collect_hud_tracked_values(&state, displayed_high_score);
+            update_hud_value_flash(&mut hud_value_flash, &mut last_hud_values, hud_values, now);
+
             let start_theme_select = if state.is_start_screen()
                 && theme_selection_mode == Some(ThemeSelectionMode::StartMenu)
             {
@@ -149,7 +182,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 &state,
                 platform,
                 HudInfo {
-                    high_score,
+                    high_score: displayed_high_score,
                     game_over_reference_high_score,
                     theme: themes.current_theme(),
                     debug: cli.debug,
@@ -158,6 +191,8 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     } else {
                         String::new()
                     },
+                    now,
+                    value_flash: hud_value_flash,
                 },
                 MenuUiState {
                     start_selected_idx: start_menu_selected_idx,
@@ -166,6 +201,8 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     start_speed_level,
                     start_speed_adjust_mode,
                     checkerboard_enabled,
+                    game_border_enabled,
+                    play_area_too_small: play_area_is_too_small,
                     pause_selected_idx: pause_menu_selected_idx,
                     game_over_selected_idx: game_over_menu_selected_idx,
                     start_theme_select,
@@ -259,6 +296,9 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                                 START_SETTINGS_GRID_IDX => {
                                     checkerboard_enabled = !checkerboard_enabled;
                                 }
+                                START_SETTINGS_BORDER_IDX => {
+                                    game_border_enabled = !game_border_enabled;
+                                }
                                 START_SETTINGS_BACK_IDX => {
                                     start_settings_open = false;
                                 }
@@ -286,8 +326,10 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     GameInput::Confirm | GameInput::Direction(Direction::Right) => {
                         match start_menu_selected_idx {
                             START_MENU_START_IDX => {
-                                state = GameState::new_with_options(bounds, start_speed_level);
-                                state.status = GameStatus::Playing;
+                                if !play_area_is_too_small {
+                                    state = GameState::new_with_options(bounds, start_speed_level);
+                                    state.status = GameStatus::Playing;
+                                }
                             }
                             START_MENU_SETTINGS_IDX => {
                                 start_settings_open = true;
@@ -343,7 +385,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     }
                     GameInput::Confirm | GameInput::Direction(Direction::Right) => {
                         match pause_menu_selected_idx {
-                            0 => state.status = GameStatus::Playing,
+                            0 if !play_area_is_too_small => state.status = GameStatus::Playing,
                             1 => theme_selection_mode = Some(ThemeSelectionMode::PauseMenu),
                             2 => {
                                 persist_selected_theme_if_dirty(
@@ -355,7 +397,9 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                             _ => {}
                         }
                     }
-                    GameInput::Pause | GameInput::Direction(Direction::Left) => {
+                    GameInput::Pause | GameInput::Direction(Direction::Left)
+                        if !play_area_is_too_small =>
+                    {
                         state.status = GameStatus::Playing
                     }
                     _ => {}
@@ -514,6 +558,22 @@ fn grid_bounds_from_frame(size: Size, debug_enabled: bool) -> io::Result<GridSiz
     Ok(GridSize { width, height })
 }
 
+fn play_area_too_small(size: Size, debug_enabled: bool) -> bool {
+    const MIN_GAME_AREA_CELLS: u16 = 30;
+
+    let hud_rows: u16 = 2 + u16::from(debug_enabled) + HUD_BOTTOM_MARGIN_Y;
+    let viewport_w = size
+        .width
+        .saturating_sub(PLAY_AREA_MARGIN_X.saturating_mul(2));
+    let viewport_h = size
+        .height
+        .saturating_sub(hud_rows)
+        .saturating_sub(PLAY_AREA_MARGIN_Y.saturating_mul(2));
+    let game_h = viewport_h.saturating_mul(2);
+
+    viewport_w < MIN_GAME_AREA_CELLS || game_h < MIN_GAME_AREA_CELLS
+}
+
 fn format_debug_line(
     state: &GameState,
     last_input: Option<GameInput>,
@@ -560,6 +620,63 @@ fn tick_interval_for_speed(speed_level: u32) -> Duration {
         .saturating_sub(speed_penalty_ms)
         .max(MIN_TICK_INTERVAL_MS);
     Duration::from_millis(clamped_ms)
+}
+
+fn collect_hud_tracked_values(state: &GameState, displayed_high_score: u32) -> HudTrackedValues {
+    HudTrackedValues {
+        length: state.snake.len(),
+        level: state.speed_level,
+        score: state.score,
+        high_score: displayed_high_score,
+        dimensions: (state.bounds().width, state.bounds().height),
+        food_count: state.calculated_food_count(),
+        next_points: state.ordinary_food_projected_points(),
+        bonus_multiplier_hundredths: (state.ordinary_food_projected_multiplier() * 100.0).round()
+            as u32,
+        coverage_hundredths: (state.play_area_coverage_percent() * 100.0).round() as u32,
+    }
+}
+
+fn update_hud_value_flash(
+    flash: &mut HudValueFlash,
+    previous: &mut Option<HudTrackedValues>,
+    current: HudTrackedValues,
+    now: Instant,
+) {
+    let Some(prev) = previous else {
+        *previous = Some(current);
+        return;
+    };
+
+    if prev.length != current.length {
+        flash.length_changed_at = Some(now);
+    }
+    if prev.level != current.level {
+        flash.level_changed_at = Some(now);
+    }
+    if prev.score != current.score {
+        flash.score_changed_at = Some(now);
+    }
+    if prev.high_score != current.high_score {
+        flash.high_score_changed_at = Some(now);
+    }
+    if prev.dimensions != current.dimensions {
+        flash.dimensions_changed_at = Some(now);
+    }
+    if prev.food_count != current.food_count {
+        flash.food_count_changed_at = Some(now);
+    }
+    if prev.next_points != current.next_points {
+        flash.next_points_changed_at = Some(now);
+    }
+    if prev.bonus_multiplier_hundredths != current.bonus_multiplier_hundredths {
+        flash.bonus_multiplier_changed_at = Some(now);
+    }
+    if prev.coverage_hundredths != current.coverage_hundredths {
+        flash.coverage_changed_at = Some(now);
+    }
+
+    *previous = Some(current);
 }
 
 fn wrap_next(current: usize, len: usize) -> usize {
