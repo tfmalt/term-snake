@@ -39,6 +39,13 @@ enum CellKind {
     SuperFood,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CellRender {
+    kind: CellKind,
+    bg: ratatui::style::Color,
+    neighbor_flash: bool,
+}
+
 /// Renders the full game frame from immutable state.
 pub fn render(
     frame: &mut Frame<'_>,
@@ -224,6 +231,12 @@ fn render_play_area(
     let bounds = state.bounds();
     let grid = build_cell_grid(state, bounds);
     let glow = state.active_glow();
+    let level_up_neighbor_flash = glow.and_then(level_up_neighbor_flash_amount).unwrap_or(0.0);
+    let neighbor_flash_mask = if level_up_neighbor_flash > 0.0 {
+        Some(build_snake_neighbor_mask(state, bounds))
+    } else {
+        None
+    };
 
     let buffer = frame.buffer_mut();
     let game_h = usize::from(bounds.height);
@@ -245,11 +258,21 @@ fn render_play_area(
             }
 
             let top_kind = grid[top_game_row * usize::from(bounds.width) + col];
+            let top_idx = top_game_row * usize::from(bounds.width) + col;
             let bot_kind = if bot_game_row < game_h {
                 grid[bot_game_row * usize::from(bounds.width) + col]
             } else {
                 CellKind::Empty
             };
+            let bot_idx = bot_game_row * usize::from(bounds.width) + col;
+
+            let top_neighbor_flash = neighbor_flash_mask
+                .as_ref()
+                .is_some_and(|mask| mask[top_idx]);
+            let bot_neighbor_flash = bot_game_row < game_h
+                && neighbor_flash_mask
+                    .as_ref()
+                    .is_some_and(|mask| mask[bot_idx]);
 
             let top_bg = if checkerboard_enabled {
                 checker_bg(col, top_game_row, theme)
@@ -261,11 +284,62 @@ fn render_play_area(
             } else {
                 theme.field_bg
             };
+            let top = CellRender {
+                kind: top_kind,
+                bg: top_bg,
+                neighbor_flash: top_neighbor_flash,
+            };
+            let bot = CellRender {
+                kind: bot_kind,
+                bg: bot_bg,
+                neighbor_flash: bot_neighbor_flash,
+            };
             let (glyph, fg, bg) =
-                composite_half_block(top_kind, bot_kind, top_bg, bot_bg, theme, glow);
+                composite_half_block(top, bot, theme, glow, level_up_neighbor_flash);
             buffer.set_string(x, y, glyph, Style::new().fg(fg).bg(bg));
         }
     }
+}
+
+fn build_snake_neighbor_mask(state: &GameState, bounds: GridSize) -> Vec<bool> {
+    let width = usize::from(bounds.width);
+    let height = usize::from(bounds.height);
+    let mut snake_cells = vec![false; width * height];
+    let mut neighbors = vec![false; width * height];
+
+    for segment in state.snake.segments() {
+        if segment.is_within_bounds(bounds) {
+            let idx = segment.y as usize * width + segment.x as usize;
+            snake_cells[idx] = true;
+        }
+    }
+
+    for segment in state.snake.segments() {
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+
+                let nx = segment.x + dx;
+                let ny = segment.y + dy;
+                if nx < 0
+                    || ny < 0
+                    || nx >= i32::from(bounds.width)
+                    || ny >= i32::from(bounds.height)
+                {
+                    continue;
+                }
+
+                let idx = ny as usize * width + nx as usize;
+                if !snake_cells[idx] {
+                    neighbors[idx] = true;
+                }
+            }
+        }
+    }
+
+    neighbors
 }
 
 /// Populates a flat grid of `CellKind` values indexed by `row * width + col`.
@@ -308,16 +382,17 @@ fn build_cell_grid(state: &GameState, bounds: GridSize) -> Vec<CellKind> {
 
 /// Returns (glyph, fg_color, bg_color) for a terminal cell compositing two game rows.
 fn composite_half_block(
-    top: CellKind,
-    bot: CellKind,
-    top_bg: ratatui::style::Color,
-    bot_bg: ratatui::style::Color,
+    top: CellRender,
+    bot: CellRender,
     theme: &Theme,
     glow: Option<&GlowEffect>,
+    neighbor_flash_amount: f32,
 ) -> (&'static str, ratatui::style::Color, ratatui::style::Color) {
     let palette = glyphs();
+    let top_bg = apply_neighbor_flash(top.bg, top.neighbor_flash, neighbor_flash_amount);
+    let bot_bg = apply_neighbor_flash(bot.bg, bot.neighbor_flash, neighbor_flash_amount);
 
-    match (top, bot) {
+    match (top.kind, bot.kind) {
         (CellKind::Empty, CellKind::Empty) => (palette.half_upper, top_bg, bot_bg),
         (top_kind, CellKind::Empty) => (
             palette.half_upper,
@@ -389,6 +464,118 @@ fn glow_target_color(trigger: GlowTrigger) -> ratatui::style::Color {
         GlowTrigger::SpeedLevelUp => Color::Rgb(200, 255, 255),
         GlowTrigger::SuperFoodEaten => Color::Rgb(255, 215, 0),
     }
+}
+
+fn level_up_neighbor_flash_amount(effect: &GlowEffect) -> Option<f32> {
+    if effect.trigger != GlowTrigger::SpeedLevelUp {
+        return None;
+    }
+
+    let t = effect.progress();
+    Some(0.5 * (1.0 - ease_out_cubic(t)))
+}
+
+fn ease_out_cubic(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t).powi(3)
+}
+
+fn apply_neighbor_flash(
+    color: ratatui::style::Color,
+    enabled: bool,
+    amount: f32,
+) -> ratatui::style::Color {
+    if !enabled || amount <= 0.0 {
+        return color;
+    }
+
+    brighten_color(color, amount)
+}
+
+fn brighten_color(color: ratatui::style::Color, amount: f32) -> ratatui::style::Color {
+    use ratatui::style::Color;
+
+    let Some((r, g, b)) = color_to_rgb(color) else {
+        return color;
+    };
+
+    let amount = amount.clamp(0.0, 1.0);
+    let brighten_channel = |channel: u8| -> u8 {
+        let remaining = 255.0 - f32::from(channel);
+        (f32::from(channel) + (remaining * amount)).round() as u8
+    };
+
+    Color::Rgb(
+        brighten_channel(r),
+        brighten_channel(g),
+        brighten_channel(b),
+    )
+}
+
+fn color_to_rgb(color: ratatui::style::Color) -> Option<(u8, u8, u8)> {
+    use ratatui::style::Color;
+
+    let rgb = match color {
+        Color::Rgb(r, g, b) => (r, g, b),
+        Color::Black => (0, 0, 0),
+        Color::Red => (205, 49, 49),
+        Color::Green => (13, 188, 121),
+        Color::Yellow => (229, 229, 16),
+        Color::Blue => (36, 114, 200),
+        Color::Magenta => (188, 63, 188),
+        Color::Cyan => (17, 168, 205),
+        Color::Gray => (229, 229, 229),
+        Color::DarkGray => (102, 102, 102),
+        Color::LightRed => (241, 76, 76),
+        Color::LightGreen => (35, 209, 139),
+        Color::LightYellow => (245, 245, 67),
+        Color::LightBlue => (59, 142, 234),
+        Color::LightMagenta => (214, 112, 214),
+        Color::LightCyan => (41, 184, 219),
+        Color::White => (255, 255, 255),
+        Color::Indexed(index) => xterm_index_to_rgb(index),
+        Color::Reset => return None,
+    };
+
+    Some(rgb)
+}
+
+fn xterm_index_to_rgb(index: u8) -> (u8, u8, u8) {
+    if index < 16 {
+        const ANSI16: [(u8, u8, u8); 16] = [
+            (0, 0, 0),
+            (128, 0, 0),
+            (0, 128, 0),
+            (128, 128, 0),
+            (0, 0, 128),
+            (128, 0, 128),
+            (0, 128, 128),
+            (192, 192, 192),
+            (128, 128, 128),
+            (255, 0, 0),
+            (0, 255, 0),
+            (255, 255, 0),
+            (0, 0, 255),
+            (255, 0, 255),
+            (0, 255, 255),
+            (255, 255, 255),
+        ];
+        return ANSI16[index as usize];
+    }
+
+    if index <= 231 {
+        let i = index - 16;
+        let r = i / 36;
+        let g = (i % 36) / 6;
+        let b = i % 6;
+
+        let level = |v: u8| -> u8 { if v == 0 { 0 } else { 55 + v * 40 } };
+
+        return (level(r), level(g), level(b));
+    }
+
+    let gray = 8 + (index - 232) * 10;
+    (gray, gray, gray)
 }
 
 /// Linearly interpolates between two `Rgb` colors at factor `t` (0.0–1.0).

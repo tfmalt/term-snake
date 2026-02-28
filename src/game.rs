@@ -1,9 +1,9 @@
+use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
-use rand::rngs::StdRng;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::config::{FOOD_PER_SPEED_LEVEL, GridSize, MAX_START_SPEED_LEVEL};
+use crate::config::{GridSize, FOOD_PER_SPEED_LEVEL, MAX_START_SPEED_LEVEL};
 use crate::food::Food;
 use crate::input::GameInput;
 use crate::snake::{Position, Snake};
@@ -31,47 +31,62 @@ pub enum GlowTrigger {
     SuperFoodEaten,
 }
 
-/// A temporary visual pulse that fades over several game ticks.
+/// A temporary visual pulse that fades over a fixed wall-clock duration.
 #[derive(Debug, Clone, Copy)]
 pub struct GlowEffect {
     pub trigger: GlowTrigger,
-    pub ticks_remaining: u32,
-    pub total_ticks: u32,
+    started_at: Instant,
+    duration: Duration,
 }
 
 impl GlowEffect {
-    /// Default glow duration in game ticks.
-    const DURATION: u32 = 10;
+    const SPEED_LEVEL_UP_DURATION: Duration = Duration::from_secs(3);
+    const SUPER_FOOD_DURATION: Duration = Duration::from_millis(1800);
 
-    /// Creates a new glow effect that lasts [`Self::DURATION`] ticks.
+    /// Creates a new glow effect with trigger-specific duration.
     #[must_use]
     pub fn new(trigger: GlowTrigger) -> Self {
+        let duration = match trigger {
+            GlowTrigger::SpeedLevelUp => Self::SPEED_LEVEL_UP_DURATION,
+            GlowTrigger::SuperFoodEaten => Self::SUPER_FOOD_DURATION,
+        };
+
         Self {
             trigger,
-            ticks_remaining: Self::DURATION,
-            total_ticks: Self::DURATION,
+            started_at: Instant::now(),
+            duration,
         }
+    }
+
+    /// Returns normalized effect progress where `0.0` is fresh and `1.0` is expired.
+    #[must_use]
+    pub fn progress(&self) -> f32 {
+        if self.duration.is_zero() {
+            return 1.0;
+        }
+
+        let elapsed = self.started_at.elapsed();
+        if elapsed >= self.duration {
+            return 1.0;
+        }
+
+        elapsed.as_secs_f32() / self.duration.as_secs_f32()
     }
 
     /// Returns the current intensity as a value from 1.0 (fresh) to 0.0 (expired).
     #[must_use]
     pub fn intensity(&self) -> f32 {
-        if self.total_ticks == 0 {
+        if self.duration.is_zero() {
             return 0.0;
         }
-        self.ticks_remaining as f32 / self.total_ticks as f32
+
+        1.0 - self.progress()
     }
 
-    /// Returns `true` while the effect has remaining ticks.
+    /// Returns `true` while the effect is still within its duration window.
     #[must_use]
     pub fn is_active(&self) -> bool {
-        self.ticks_remaining > 0
-    }
-
-    /// Decrements by one tick. Returns `true` if the effect is still active.
-    pub fn tick(&mut self) -> bool {
-        self.ticks_remaining = self.ticks_remaining.saturating_sub(1);
-        self.is_active()
+        self.progress() < 1.0
     }
 }
 
@@ -191,10 +206,7 @@ impl GameState {
 
         self.tick_count += 1;
 
-        // Decay active glow effect.
-        if let Some(ref mut glow) = self.glow
-            && !glow.tick()
-        {
+        if self.glow.as_ref().is_some_and(|glow| !glow.is_active()) {
             self.glow = None;
         }
 
