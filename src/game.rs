@@ -322,8 +322,9 @@ impl GameState {
 
     fn update_speed_level(&mut self) {
         let food_eaten = self.snake.len().saturating_sub(2) as u32;
-        self.speed_level = (self.base_speed_level + (food_eaten / FOOD_PER_SPEED_LEVEL))
-            .min(MAX_START_SPEED_LEVEL);
+        self.speed_level = self
+            .base_speed_level
+            .saturating_add(food_eaten / FOOD_PER_SPEED_LEVEL);
     }
 
     /// Returns the currently active glow effect, if any.
@@ -760,29 +761,58 @@ mod tests {
     }
 
     #[test]
-    fn speed_level_up_glow_stops_at_max_speed() {
+    fn speed_level_continues_past_starting_speed_cap() {
         let mut state = GameState::new_with_seed(
             GridSize {
-                width: 300,
-                height: 20,
+                width: 40,
+                height: 30,
             },
             99,
         );
         state.set_base_speed_level(MAX_START_SPEED_LEVEL);
-        let long_segments = (0..100)
-            .map(|i| Position { x: 5 - i, y: 5 })
+        let segments = (0..6)
+            .map(|i| Position { x: 10 - i, y: 10 })
             .collect::<Vec<_>>();
-        state.snake = Snake::from_segments(long_segments, Direction::Right)
-            .expect("long snake segments should be valid");
-        state.foods = vec![Food::new(Position { x: 6, y: 5 })];
+        state.snake = Snake::from_segments(segments, Direction::Right)
+            .expect("snake segments should be valid");
+        state.foods = vec![Food::new(Position { x: 11, y: 10 })];
 
         state.tick();
 
-        assert_eq!(state.speed_level, MAX_START_SPEED_LEVEL);
-        assert_ne!(
+        assert_eq!(state.speed_level, MAX_START_SPEED_LEVEL + 1);
+        assert_eq!(state.score, MAX_START_SPEED_LEVEL);
+        assert_eq!(
             state.active_glow().map(|g| g.trigger),
             Some(super::GlowTrigger::SpeedLevelUp)
         );
+    }
+
+    #[test]
+    fn scoring_uses_levels_beyond_fifteen() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 40,
+                height: 30,
+            },
+            101,
+        );
+        state.set_base_speed_level(MAX_START_SPEED_LEVEL);
+        let segments = (0..6)
+            .map(|i| Position { x: 10 - i, y: 10 })
+            .collect::<Vec<_>>();
+        state.snake = Snake::from_segments(segments, Direction::Right)
+            .expect("snake segments should be valid");
+        state.foods = vec![Food::new(Position { x: 11, y: 10 })];
+
+        state.tick();
+        assert_eq!(state.speed_level, MAX_START_SPEED_LEVEL + 1);
+        assert_eq!(state.score, MAX_START_SPEED_LEVEL);
+
+        state.foods = vec![Food::new(Position { x: 12, y: 10 })];
+        state.tick();
+
+        assert_eq!(state.speed_level, MAX_START_SPEED_LEVEL + 1);
+        assert_eq!(state.score, (MAX_START_SPEED_LEVEL * 2) + 2);
     }
 
     #[test]
